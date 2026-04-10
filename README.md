@@ -55,14 +55,11 @@ Tokens are stored in `~/.teams-cli/tokens.json`. Token lifetimes vary by API (th
 # List recent chats
 teams chats
 
-# Read messages from chat #3 (index from `teams chats`)
-teams messages 3
-
-# Read messages by conversation ID
-teams messages "19:abc123@thread.v2"
+# Read messages (use short ID from `teams chats`)
+teams messages a1b2
 
 # Send a message
-teams send 3 "Hello from the CLI"
+teams send a1b2 "Hello from the CLI"
 
 # Find a person by name or email
 teams find "Jane Smith"
@@ -75,7 +72,7 @@ teams dm "8:orgid:00000000-0000-..." "Hello via MRI"
 teams search "quarterly report"
 
 # Watch a chat for new messages (Ctrl+C to stop)
-teams watch abc123
+teams watch a1b2
 
 # Watch all chats for new messages
 teams watch
@@ -86,7 +83,7 @@ teams activity --feed mentions
 teams activity --feed calllogs
 
 # List members of a chat
-teams members 3
+teams members a1b2
 ```
 
 ### Options
@@ -95,7 +92,7 @@ Most commands accept `--limit` / `-n` to control how many results to fetch:
 
 ```sh
 teams chats --limit 50
-teams messages 3 --limit 40
+teams messages a1b2 --limit 40
 teams search "budget" --limit 10
 ```
 
