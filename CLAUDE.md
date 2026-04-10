@@ -40,6 +40,9 @@ This is a Python CLI for Microsoft Teams that talks directly to the internal Tea
 - Members are at `/threads/{id}`, not `/conversations/{id}/members`
 - Activity feed reuses `get_messages()` with system conversation IDs (`48:notifications`, `48:mentions`, `48:calllogs`)
 - System conversations (ID prefix `48:`) are filtered out of chat listings
+- Login uses a **persistent browser profile** (`~/.teams-cli/browser-profile/`) so session cookies survive for silent token refresh
+- Expired tokens are automatically refreshed via headless Playwright before each command — no user interaction unless the session itself has expired
+- HTTP clients are created **outside** `asyncio.run()` because Playwright's sync API conflicts with an existing event loop
 
 ## Conventions
 
