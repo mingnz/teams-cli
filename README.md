@@ -7,7 +7,11 @@
 
 A command-line interface for Microsoft Teams. List chats, read and send messages, search, view activity, and more — all from your terminal.
 
-Uses the internal Teams Chat Service API (the same API the Teams web client uses), authenticated via a Playwright-based browser login flow.
+Uses the internal Teams Chat Service API (the same API the Teams web client uses), authenticated via a Playwright-based browser login flow. No Entra ID app registration or tenant-level admin setup required — just sign in with your browser.
+
+### AI agent integration
+
+This CLI can be used as a tool for AI agents (e.g. Claude Code, Codex, GitHub Copilot) to access Microsoft Teams on your behalf — without needing a direct Microsoft integration. Most Teams integrations require Entra ID app registrations and tenant admin approval. This doesn't.
 
 ## Disclaimer
 
