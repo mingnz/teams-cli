@@ -33,17 +33,19 @@ Key values:
 
 ### auth.py
 
-Handles token persistence and the Playwright login flow.
+Handles token persistence, automatic refresh, and the Playwright login flow.
 
 - `save_tokens()` / `load_tokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
-- `is_expired()` / `get_token()` — check token expiry and retrieve by name
+- `is_expired()` / `get_token()` — check token expiry, attempt silent refresh if expired, and retrieve by name
 - `get_region()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
-- `login()` — the main login flow:
-  1. Launches headless=False Chromium via Playwright
+- `_try_refresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `True` on success, `False` if the session itself has expired.
+- `login()` — the interactive login flow:
+  1. Launches Chromium (headless=False) with a persistent browser profile so session cookies are preserved
   2. Navigates to `teams.cloud.microsoft`
   3. Polls `localStorage` every 2 seconds for up to 5 minutes until the IC3 token appears
   4. Extracts all three tokens (ic3, search, presence) and the region from `localStorage`
   5. Saves everything to disk
+- `logout()` — removes stored tokens and the browser profile directory
 
 ### client.py
 
@@ -83,10 +85,11 @@ Pure functions that transform API response dicts into display-ready dicts. No I/
 
 Typer command definitions. Each command follows the same pattern:
 
-1. Resolve input (convert chat index to conversation ID if needed)
-2. Run an async API call via `asyncio.run()`
-3. Format the results
-4. Render with Rich (tables for lists, plain text for messages)
+1. Create the HTTP client (triggers token refresh if needed — must happen before `asyncio.run()` since Playwright's sync API can't run inside an existing event loop)
+2. Resolve input (convert chat index to conversation ID if needed)
+3. Run an async API call via `asyncio.run()`
+4. Format the results
+5. Render with Rich (tables for lists, plain text for messages)
 
 The chat index system works by having `teams chats` cache its formatted output to `~/.teams-cli/last_chats.json`. Other commands read this file to resolve numeric indices to conversation IDs, so `teams messages 3` works without the user needing to copy-paste long IDs.
 
@@ -123,7 +126,7 @@ User presence/status information.
 Tests are organized to match the module structure:
 
 - `test_formatting.py` — unit tests for all pure formatting functions (25 tests). No mocking needed.
-- `test_auth.py` — tests token persistence and expiry logic using `monkeypatch` to redirect file I/O to `tmp_path` (8 tests). Does not test the Playwright login flow.
+- `test_auth.py` — tests token persistence, expiry, and refresh logic using `monkeypatch` to redirect file I/O to `tmp_path` and stub `_try_refresh` (8 tests). Does not test the Playwright login/refresh flows directly.
 - `test_api.py` — tests API functions using `pytest-httpx` to mock HTTP responses (5 tests). The chatsvc base URL is patched to a fixed value.
 - `test_cli.py` — tests command registration and the index resolution helper using Typer's `CliRunner` (4 tests).
 
@@ -138,8 +141,9 @@ cli.py: messages("3")
   -> _resolve_conversation_id("3")
      -> reads ~/.teams-cli/last_chats.json
      -> returns "19:abc123@thread.v2"
-  -> get_chat_client()
+  -> get_chat_client()  [before asyncio.run()]
      -> auth.get_token("ic3") -> reads ~/.teams-cli/tokens.json
+        -> if expired: _try_refresh() launches headless browser, re-extracts tokens
      -> returns httpx.AsyncClient with Bearer token
   -> api.get_messages(client, "19:abc123@thread.v2")
      -> GET /conversations/19:abc123@thread.v2/messages

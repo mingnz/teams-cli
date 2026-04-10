@@ -15,7 +15,7 @@ from .api import (
     search_messages,
     send_message,
 )
-from .auth import login
+from .auth import login, logout
 from .client import get_chat_client, get_search_client
 from .config import LAST_CHATS_FILE, DATA_DIR
 from .formatting import (
@@ -75,6 +75,13 @@ def login_cmd() -> None:
 
     names = [k for k in tokens if k != "region"]
     console.print(f"[green]Logged in.[/green] Tokens saved: {', '.join(names)}")
+
+
+@app.command("logout")
+def logout_cmd() -> None:
+    """Remove stored tokens and browser session data."""
+    logout()
+    console.print("Logged out. Tokens and session data removed.")
 
 
 @app.command()

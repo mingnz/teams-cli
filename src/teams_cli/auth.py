@@ -1,6 +1,7 @@
 """Token management and Playwright-based login flow."""
 
 import json
+import shutil
 import time
 
 from .config import (
@@ -13,6 +14,14 @@ from .config import (
 
 # Browser profile directory for persistent sessions
 BROWSER_PROFILE_DIR = DATA_DIR / "browser-profile"
+
+
+def logout() -> None:
+    """Remove stored tokens and browser session data."""
+    if TOKENS_FILE.exists():
+        TOKENS_FILE.unlink()
+    if BROWSER_PROFILE_DIR.exists():
+        shutil.rmtree(BROWSER_PROFILE_DIR)
 
 
 def save_tokens(tokens: dict) -> None:
