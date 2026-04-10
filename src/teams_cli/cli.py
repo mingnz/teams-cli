@@ -45,17 +45,19 @@ def _load_chat_index() -> list[dict]:
     return json.loads(LAST_CHATS_FILE.read_text())
 
 
-def _resolve_conversation_id(id_or_index: str) -> str:
-    """Resolve an index number (from `teams chats`) or raw conversation ID."""
-    if id_or_index.isdigit():
-        idx = int(id_or_index)
-        chats = _load_chat_index()
-        for c in chats:
-            if c["index"] == idx:
-                return c["id"]
-        typer.echo(f"Index {idx} not found. Run `teams chats` first.", err=True)
-        raise typer.Exit(1)
-    return id_or_index
+def _resolve_conversation_id(id_or_short: str) -> str:
+    """Resolve a short ID (from `teams chats`) or raw conversation ID."""
+    # Raw conversation IDs contain ':' (e.g. 19:abc@thread.v2)
+    if ":" in id_or_short:
+        return id_or_short
+    chats = _load_chat_index()
+    for c in chats:
+        if c.get("short_id") == id_or_short:
+            return c["id"]
+    typer.echo(
+        f"Short ID '{id_or_short}' not found. Run `teams chats` first.", err=True
+    )
+    raise typer.Exit(1)
 
 
 # ── Commands ─────────────────────────────────────────────────────────
@@ -100,7 +102,7 @@ def chats(
     _save_chat_index(formatted)
 
     table = Table(title="Recent Chats")
-    table.add_column("#", style="cyan", justify="right")
+    table.add_column("ID", style="cyan")
     table.add_column("Name", style="bold")
     table.add_column("Type", style="dim")
     table.add_column("Last Message")
@@ -108,7 +110,7 @@ def chats(
 
     for c in formatted:
         table.add_row(
-            str(c["index"]),
+            c["short_id"],
             c["name"],
             c["type"],
             c["preview"][:60],

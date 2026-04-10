@@ -57,13 +57,42 @@ def get_conversation_type(conv: dict) -> str:
     return type_map.get(thread_type, "Chat")
 
 
+def make_short_id(conv_id: str) -> str:
+    """Extract the unique hash portion of a conversation ID.
+
+    Conversation IDs look like '19:{hash}@thread.v2' or '19:{hash}@thread.tacv2'.
+    Returns the hash part (e.g. '73e9410b1e38453d94aa78274efcf175').
+    Falls back to the full ID if parsing fails.
+    """
+    # Strip prefix like "19:" and suffix like "@thread.v2"
+    body = conv_id.split(":", 1)[-1] if ":" in conv_id else conv_id
+    body = body.split("@")[0] if "@" in body else body
+    return body
+
+
+def _assign_short_ids(entries: list[dict], min_len: int = 4) -> None:
+    """Assign unique short IDs to each entry using the last N chars of the hash.
+
+    Increases length until all IDs are unique.
+    """
+    hashes = [make_short_id(e["id"]) for e in entries]
+    length = min_len
+    while length <= max((len(h) for h in hashes), default=min_len):
+        short_ids = [h[-length:] for h in hashes]
+        if len(set(short_ids)) == len(short_ids):
+            break
+        length += 1
+    for entry, h in zip(entries, hashes):
+        entry["short_id"] = h[-length:]
+
+
 def format_chat_list(conversations: list[dict]) -> list[dict]:
     """Format conversations into a list of display dicts.
 
-    Returns list of {index, name, type, last_message, last_time, id}.
+    Returns list of {short_id, name, type, preview, time, id}.
     """
     results = []
-    for i, conv in enumerate(conversations, 1):
+    for conv in conversations:
         conv_id = conv.get("id", "")
 
         # Skip system conversations
@@ -83,7 +112,7 @@ def format_chat_list(conversations: list[dict]) -> list[dict]:
 
         results.append(
             {
-                "index": len(results) + 1,
+                "short_id": "",
                 "name": get_conversation_display_name(conv),
                 "type": get_conversation_type(conv),
                 "preview": preview,
@@ -91,6 +120,8 @@ def format_chat_list(conversations: list[dict]) -> list[dict]:
                 "id": conv_id,
             }
         )
+
+    _assign_short_ids(results)
     return results
 
 

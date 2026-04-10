@@ -7,6 +7,7 @@ from teams_cli.formatting import (
     format_timestamp,
     get_conversation_display_name,
     get_conversation_type,
+    make_short_id,
     strip_html,
 )
 
@@ -69,15 +70,49 @@ class TestGetConversationType:
         assert get_conversation_type(conv) == "Chat"
 
 
+class TestMakeShortId:
+    def test_thread_v2(self):
+        assert make_short_id("19:abc123@thread.v2") == "abc123"
+
+    def test_thread_tacv2(self):
+        assert (
+            make_short_id("19:73e9410b1e38453d94aa78274efcf175@thread.tacv2")
+            == "73e9410b1e38453d94aa78274efcf175"
+        )
+
+    def test_no_prefix(self):
+        assert make_short_id("abc@thread.v2") == "abc"
+
+    def test_plain_id(self):
+        assert make_short_id("someid") == "someid"
+
+
 class TestFormatChatList:
     def test_skips_system(self, sample_conversation, system_conversation):
         result = format_chat_list([sample_conversation, system_conversation])
         assert len(result) == 1
         assert result[0]["name"] == "Project Alpha"
 
-    def test_assigns_indices(self, sample_conversation):
+    def test_assigns_short_ids(self, sample_conversation):
         result = format_chat_list([sample_conversation])
-        assert result[0]["index"] == 1
+        assert result[0]["short_id"] == "c123"
+
+    def test_unique_short_ids(self):
+        convs = [
+            {
+                "id": "19:aaa1@thread.v2",
+                "threadProperties": {},
+                "lastMessage": {},
+            },
+            {
+                "id": "19:bbb1@thread.v2",
+                "threadProperties": {},
+                "lastMessage": {},
+            },
+        ]
+        result = format_chat_list(convs)
+        ids = [r["short_id"] for r in result]
+        assert len(set(ids)) == 2
 
     def test_preview(self, sample_conversation):
         result = format_chat_list([sample_conversation])
