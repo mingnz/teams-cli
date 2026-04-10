@@ -52,4 +52,7 @@ This is a Python CLI for Microsoft Teams that talks directly to the internal Tea
 
 ## Maintenance
 
-When making major changes (new modules, new API surfaces, new commands, or architectural shifts), update this file to keep it accurate.
+When making changes to features or architecture, update the relevant docs in the same PR:
+- **CLAUDE.md** — key design details, commands, conventions
+- **docs/ARCHITECTURE.md** — module responsibilities, data flow, testing strategy
+- **README.md** — user-facing usage examples and install instructions
