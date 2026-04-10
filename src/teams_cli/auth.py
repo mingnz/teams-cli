@@ -11,6 +11,9 @@ from .config import (
     TOKENS_FILE,
 )
 
+# Browser profile directory for persistent sessions
+BROWSER_PROFILE_DIR = DATA_DIR / "browser-profile"
+
 
 def save_tokens(tokens: dict) -> None:
     """Save tokens to disk."""
@@ -31,8 +34,79 @@ def is_expired(token_entry: dict) -> bool:
     return time.time() > float(expires_on)
 
 
+def _try_refresh() -> bool:
+    """Silently refresh tokens by launching a headless browser.
+
+    Uses the persistent browser profile (session cookies) to navigate
+    to Teams, letting MSAL silently acquire new tokens, then re-extracts
+    them from localStorage.
+
+    Returns True if tokens were refreshed successfully.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+
+    try:
+        with sync_playwright() as p:
+            context = p.chromium.launch_persistent_context(
+                str(BROWSER_PROFILE_DIR),
+                headless=True,
+            )
+            page = context.new_page()
+            page.goto(TEAMS_URL)
+
+            # Wait for MSAL to silently acquire tokens (up to 30s)
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                try:
+                    found = page.evaluate("""() => {
+                        for (let i = 0; i < localStorage.length; i++) {
+                            const key = localStorage.key(i);
+                            if (key.includes('ic3.teams.office.com') && key.includes('accesstoken')) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""")
+                    if found:
+                        break
+                except Exception:
+                    pass
+                page.wait_for_timeout(1000)
+            else:
+                context.close()
+                return False
+
+            page.wait_for_timeout(2000)
+
+            # Re-extract tokens
+            tokens = load_tokens() or {}
+            for name, audience in TOKEN_AUDIENCES.items():
+                result = page.evaluate(f"""() => {{
+                    for (let i = 0; i < localStorage.length; i++) {{
+                        const key = localStorage.key(i);
+                        if (key.includes('{audience}') && key.includes('accesstoken')) {{
+                            const data = JSON.parse(localStorage.getItem(key));
+                            return {{ secret: data.secret, expires_on: data.expiresOn }};
+                        }}
+                    }}
+                    return null;
+                }}""")
+                if result:
+                    tokens[name] = result
+
+            context.close()
+
+        save_tokens(tokens)
+        return True
+    except Exception:
+        return False
+
+
 def get_token(name: str) -> str | None:
-    """Get a specific token by name, checking expiry."""
+    """Get a specific token by name, refreshing automatically if expired."""
     tokens = load_tokens()
     if not tokens:
         return None
@@ -40,6 +114,11 @@ def get_token(name: str) -> str | None:
     if not entry:
         return None
     if is_expired(entry):
+        if _try_refresh():
+            tokens = load_tokens()
+            entry = tokens.get(name, {}) if tokens else {}
+            if not is_expired(entry):
+                return entry.get("secret")
         return None
     return entry["secret"]
 
@@ -73,10 +152,13 @@ def login() -> dict:
         )
 
     tokens = {}
+    BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
+        context = p.chromium.launch_persistent_context(
+            str(BROWSER_PROFILE_DIR),
+            headless=False,
+        )
         page = context.new_page()
 
         print("Opening Teams login page...")
@@ -103,7 +185,7 @@ def login() -> dict:
                 pass
             page.wait_for_timeout(2000)
         else:
-            browser.close()
+            context.close()
             raise TimeoutError("Login timed out after 5 minutes.")
 
         # Brief pause to let all tokens populate
@@ -142,7 +224,7 @@ def login() -> dict:
         }}""")
         tokens["region"] = region_data or "amer"
 
-        browser.close()
+        context.close()
 
     save_tokens(tokens)
     return tokens

@@ -46,8 +46,33 @@ class TestGetToken:
         save_tokens(data)
         assert get_token("ic3") == "mytoken"
 
-    def test_returns_none_if_expired(self, tokens_dir):
-        _, tokens_file = tokens_dir
+    def test_returns_none_if_expired_no_refresh(self, tokens_dir, monkeypatch):
+        monkeypatch.setattr("teams_cli.auth._try_refresh", lambda: False)
+        data = {"ic3": {"secret": "old", "expires_on": str(int(time.time()) - 100)}}
+        save_tokens(data)
+        assert get_token("ic3") is None
+
+    def test_refreshes_expired_token(self, tokens_dir, monkeypatch):
+        data = {
+            "ic3": {"secret": "old", "expires_on": str(int(time.time()) - 100)},
+        }
+        save_tokens(data)
+
+        def fake_refresh():
+            # Simulate successful refresh by updating stored tokens
+            tokens = load_tokens()
+            tokens["ic3"] = {
+                "secret": "new_token",
+                "expires_on": str(int(time.time()) + 3600),
+            }
+            save_tokens(tokens)
+            return True
+
+        monkeypatch.setattr("teams_cli.auth._try_refresh", fake_refresh)
+        assert get_token("ic3") == "new_token"
+
+    def test_returns_none_if_refresh_fails(self, tokens_dir, monkeypatch):
+        monkeypatch.setattr("teams_cli.auth._try_refresh", lambda: False)
         data = {"ic3": {"secret": "old", "expires_on": str(int(time.time()) - 100)}}
         save_tokens(data)
         assert get_token("ic3") is None
