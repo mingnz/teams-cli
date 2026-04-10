@@ -82,9 +82,10 @@ def chats(
     limit: int = typer.Option(30, "--limit", "-n", help="Number of chats to list."),
 ) -> None:
     """List recent conversations."""
+    client = get_chat_client()
 
     async def _run() -> list[dict]:
-        async with get_chat_client() as client:
+        async with client:
             return await list_conversations(client, page_size=limit)
 
     convos = asyncio.run(_run())
@@ -118,9 +119,10 @@ def messages(
 ) -> None:
     """Read messages from a conversation."""
     conv_id = _resolve_conversation_id(chat)
+    client = get_chat_client()
 
     async def _run() -> list[dict]:
-        async with get_chat_client() as client:
+        async with client:
             return await get_messages(client, conv_id, page_size=limit)
 
     raw = asyncio.run(_run())
@@ -144,9 +146,10 @@ def send(
 ) -> None:
     """Send a message to a conversation."""
     conv_id = _resolve_conversation_id(chat)
+    client = get_chat_client()
 
     async def _run() -> dict:
-        async with get_chat_client() as client:
+        async with client:
             return await send_message(client, conv_id, message)
 
     result = asyncio.run(_run())
@@ -161,9 +164,10 @@ def search(
     limit: int = typer.Option(25, "--limit", "-n", help="Max results."),
 ) -> None:
     """Search messages across all conversations."""
+    client = get_search_client()
 
     async def _run() -> dict:
-        async with get_search_client() as client:
+        async with client:
             return await search_messages(client, query, size=limit)
 
     data = asyncio.run(_run())
@@ -201,9 +205,10 @@ def activity(
     limit: int = typer.Option(20, "--limit", "-n", help="Number of items."),
 ) -> None:
     """Show the activity feed (notifications, mentions, or call logs)."""
+    client = get_chat_client()
 
     async def _run() -> list[dict]:
-        async with get_chat_client() as client:
+        async with client:
             return await get_activity(client, feed=feed, page_size=limit)
 
     raw = asyncio.run(_run())
@@ -225,9 +230,10 @@ def members(
 ) -> None:
     """List members of a conversation."""
     conv_id = _resolve_conversation_id(chat)
+    client = get_chat_client()
 
     async def _run() -> list[dict]:
-        async with get_chat_client() as client:
+        async with client:
             return await get_thread_members(client, conv_id)
 
     raw = asyncio.run(_run())
