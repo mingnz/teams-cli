@@ -3,6 +3,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Prevent tryRefresh from launching a real browser
+vi.mock("playwright", () => {
+  throw new Error("playwright not available in tests");
+});
+
 vi.mock("../src/config.js", () => {
   const dir = join(tmpdir(), "teams-cli-test-auth");
   return {
