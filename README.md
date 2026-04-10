@@ -22,10 +22,6 @@ npx @anthropic-ai/skills add https://github.com/mingnz/teams-cli
 # Or copy skills/teams-cli/ into your project's .claude/skills/ directory
 ```
 
-## Disclaimer
-
-This project is not affiliated with, endorsed by, or associated with Microsoft. It uses undocumented internal APIs that Microsoft can change or restrict at any time without notice. Use at your own risk — this tool may break unexpectedly.
-
 ## Install
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
@@ -140,3 +136,7 @@ tests/
   test_cli.py
   test_formatting.py
 ```
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or associated with Microsoft. It uses undocumented internal APIs that Microsoft can change or restrict at any time without notice. Use at your own risk — this tool may break unexpectedly.
