@@ -1,0 +1,48 @@
+# Security
+
+This document describes how teams-cli handles authentication, credentials, and data in transit.
+
+## Authentication
+
+teams-cli authenticates via a Playwright-based browser login flow — the same sign-in experience as the Teams web client, including full MFA support. No credentials are ever entered into or handled by the CLI directly; authentication is delegated entirely to Microsoft's login page in a real browser.
+
+A persistent browser profile preserves session cookies so that expired tokens can be refreshed automatically via a headless browser, without requiring user interaction unless the session itself has expired.
+
+Running `teams logout` removes all stored tokens and the browser profile directory.
+
+## Credential storage
+
+- Tokens are stored locally at `~/.teams-cli/tokens.json` and are never logged, printed, or transmitted to any service other than Microsoft's APIs
+- The `~/.teams-cli/` directory is gitignored to prevent accidental commits to version control
+- Token lifetimes are governed by the organisation's Entra ID policy, limiting the window of validity
+
+## Transport security
+
+- All API communication uses HTTPS with certificate validation via httpx
+- Bearer tokens are transmitted only in the `Authorization` header over TLS
+- No sensitive data is sent to third-party services — all requests go directly to Microsoft endpoints
+
+## Input handling
+
+- API request bodies are constructed using structured JSON serialization, preventing malformed payloads
+- URL parameters are encoded via httpx's built-in handling
+- Server-side validation is performed by Microsoft's APIs on all inputs
+
+## Dependencies
+
+All dependencies are well-maintained, widely used packages pinned via `uv.lock`:
+
+- **httpx** — HTTP client with TLS by default
+- **typer** — CLI framework (no network access)
+- **rich** — terminal output (display only)
+- **playwright** — browser automation (used only for authentication)
+
+The repository has the following GitHub security features enabled:
+
+- **Dependabot security updates** — vulnerable dependencies are flagged and patched automatically
+- **Secret scanning** with **push protection** — prevents accidental commits of tokens or credentials
+- **Code scanning** — static analysis via GitHub's CodeQL to detect security issues in code
+
+## Reporting security issues
+
+If you discover a security issue, please open an issue on the [GitHub repository](https://github.com/mingnz/teams-cli/issues) or contact the maintainer directly.

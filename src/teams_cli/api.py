@@ -60,8 +60,12 @@ async def send_message(
     client_msg_id = str(random.randint(10**18, 10**19 - 1))
     resp = await client.post(
         f"{base}/conversations/{conversation_id}/messages",
-        headers={"Content-Type": "text/json"},
-        content=f'{{"content":"<p>{content}</p>","messagetype":"RichText/Html","contenttype":"text","clientmessageid":"{client_msg_id}"}}',
+        json={
+            "content": f"<p>{content}</p>",
+            "messagetype": "RichText/Html",
+            "contenttype": "text",
+            "clientmessageid": client_msg_id,
+        },
     )
     resp.raise_for_status()
     return resp.json()

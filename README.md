@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![CodeQL](https://github.com/mingnz/teams-cli/actions/workflows/codeql.yml/badge.svg)](https://github.com/mingnz/teams-cli/actions/workflows/codeql.yml)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen.svg?logo=dependabot)](https://github.com/mingnz/teams-cli/security)
 
 A command-line interface for Microsoft Teams. List chats, read and send messages, search, view activity, and more — all from your terminal.
 
