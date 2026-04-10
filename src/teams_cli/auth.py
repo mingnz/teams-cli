@@ -39,7 +39,7 @@ def load_tokens() -> dict | None:
 
 def is_expired(token_entry: dict) -> bool:
     """Check if a token entry has expired."""
-    expires_on = token_entry.get("expires_on", 0)
+    expires_on = token_entry.get("expires_on") or 0
     return time.time() > float(expires_on)
 
 
@@ -173,6 +173,7 @@ def login() -> dict:
         print("Opening Teams login page...")
         page.goto(TEAMS_URL)
         print("Please sign in to Microsoft Teams in the browser window.")
+        print('When prompted "Stay signed in?", click Yes.')
         print("Waiting for login to complete (timeout: 5 minutes)...")
 
         # Poll localStorage for the IC3 token
@@ -234,6 +235,18 @@ def login() -> dict:
         tokens["region"] = region_data or "amer"
 
         context.close()
+
+    # Validate that we got usable tokens
+    valid_tokens = {
+        k: v for k, v in tokens.items() if isinstance(v, dict) and v.get("secret")
+    }
+    if not valid_tokens:
+        logout()
+        raise RuntimeError(
+            "No valid tokens captured. "
+            'Did you click "Yes" on "Stay signed in?"? '
+            "Please run `teams login` again and select Yes."
+        )
 
     save_tokens(tokens)
     return tokens
