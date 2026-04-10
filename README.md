@@ -45,7 +45,7 @@ Log in by launching a browser session. Sign in as you normally would (including 
 teams login
 ```
 
-Tokens are stored in `~/.teams-cli/tokens.json` and typically last about a day. Expired tokens are refreshed automatically via a headless browser using your saved session — no manual re-login needed unless the session itself has expired.
+Tokens are stored in `~/.teams-cli/tokens.json` and expire after the lifetime set by your organisation (typically 1 hour). Expired tokens are refreshed automatically via a headless browser using your saved session cookies — no manual re-login needed unless the session itself has expired.
 
 ## Usage
 
