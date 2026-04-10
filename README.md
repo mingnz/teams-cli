@@ -67,6 +67,12 @@ teams dm "8:orgid:00000000-0000-..." "Hello via MRI"
 # Search across all conversations
 teams search "quarterly report"
 
+# Watch a chat for new messages (Ctrl+C to stop)
+teams watch abc123
+
+# Watch all chats for new messages
+teams watch
+
 # View activity feed
 teams activity
 teams activity --feed mentions
