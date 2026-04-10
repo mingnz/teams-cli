@@ -24,7 +24,7 @@ npx @anthropic-ai/skills add https://github.com/mingnz/teams-cli
 
 ## Install
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 # Clone and install
@@ -45,7 +45,7 @@ Log in by launching a browser session. Sign in as you normally would (including 
 teams login
 ```
 
-Tokens are stored in `~/.teams-cli/tokens.json` and expire after the session lifetime set by your organisation (typically 1 hour). Re-run `teams login` when they expire.
+Tokens are stored in `~/.teams-cli/tokens.json` and typically last about a day. Expired tokens are refreshed automatically via a headless browser using your saved session — no manual re-login needed unless the session itself has expired.
 
 ## Usage
 
