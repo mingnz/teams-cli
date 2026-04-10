@@ -4,6 +4,10 @@ A command-line interface for Microsoft Teams. List chats, read and send messages
 
 Uses the internal Teams Chat Service API (the same API the Teams web client uses), authenticated via a Playwright-based browser login flow.
 
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or associated with Microsoft. It uses undocumented internal APIs that Microsoft can change or restrict at any time without notice. Use at your own risk — this tool may break unexpectedly.
+
 ## Install
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
