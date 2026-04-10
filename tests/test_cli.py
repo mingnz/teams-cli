@@ -27,12 +27,16 @@ def test_chats_requires_auth(monkeypatch):
     assert "token" in result.output.lower() or result.exit_code == 1
 
 
-def test_resolve_index(tmp_path, monkeypatch):
+def test_resolve_short_id(tmp_path, monkeypatch):
     chats_file = tmp_path / "last_chats.json"
     chats_file.write_text(
         json.dumps(
             [
-                {"index": 1, "id": "19:resolved@thread.v2", "name": "Test"},
+                {
+                    "short_id": "lved",
+                    "id": "19:resolved@thread.v2",
+                    "name": "Test",
+                },
             ]
         )
     )
@@ -40,7 +44,7 @@ def test_resolve_index(tmp_path, monkeypatch):
 
     from teams_cli.cli import _resolve_conversation_id
 
-    assert _resolve_conversation_id("1") == "19:resolved@thread.v2"
+    assert _resolve_conversation_id("lved") == "19:resolved@thread.v2"
 
 
 def test_resolve_raw_id():
