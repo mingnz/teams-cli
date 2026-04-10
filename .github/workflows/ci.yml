@@ -7,24 +7,16 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-
-  test:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.12", "3.13"]
+        node-version: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync
-      - run: uv run pytest -v
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npx tsup
+      - run: npx vitest run

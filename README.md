@@ -1,9 +1,7 @@
 # teams-cli
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Node.js 18+](https://img.shields.io/badge/node-18%2B-blue.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![CodeQL](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen.svg?logo=dependabot)](https://github.com/mingnz/teams-cli/security)
 
@@ -26,17 +24,21 @@ npx skills add https://github.com/mingnz/teams-cli
 
 ## Install
 
-Requires [uv](https://docs.astral.sh/uv/).
+Requires [Node.js](https://nodejs.org/) 18+.
 
 ```sh
-# Clone and install
+# Install globally from npm
+npm install -g teams-cli
+
+# Or run directly with npx
+npx teams-cli --help
+
+# Or clone and build from source
 git clone https://github.com/mingnz/teams-cli.git
 cd teams-cli
-uv sync
-uv run playwright install chromium
-
-# Or install globally
-uv tool install -e .
+npm install
+npm run build
+npx playwright install chromium
 ```
 
 ## Authentication
@@ -101,28 +103,31 @@ Run `teams --help` or `teams <command> --help` for full details.
 ## Development
 
 ```sh
-# Install dev dependencies
-uv sync
+# Install dependencies
+npm install
+
+# Build
+npm run build
 
 # Run tests
-uv run pytest
+npm test
 
-# Run tests with verbose output
-uv run pytest -v
+# Run in dev mode (no build step)
+npm run dev -- chats
 ```
 
 ## How it works
 
 1. `teams login` opens Chromium via Playwright, navigates to Teams, and waits for you to complete sign-in
 2. Auth tokens are extracted from the browser's `localStorage` (three tokens: chat, search, presence) along with your region
-3. CLI commands use these tokens to call the Teams Chat Service API (`teams.cloud.microsoft/api/chatsvc/`) and the Substrate Search API (`substrate.office.com`) directly via `httpx`
+3. CLI commands use these tokens to call the Teams Chat Service API (`teams.cloud.microsoft/api/chatsvc/`) and the Substrate Search API (`substrate.office.com`) directly via `fetch`
 4. The `teams chats` command caches the conversation list locally so you can reference chats by short ID in subsequent commands
 5. The `teams dm` command searches for a user via the Substrate Suggestions API, creates a 1:1 thread via `POST /threads`, and sends the message — all in one step
 
 ## Project structure
 
 ```
-src/teams_cli/    # CLI source — auth, API calls, formatting, commands
+src/              # CLI source — auth, API calls, formatting, commands
 tests/            # Unit tests for all modules
 skills/           # Agent skill for AI-assisted Teams interaction
 docs/             # Architecture and security documentation

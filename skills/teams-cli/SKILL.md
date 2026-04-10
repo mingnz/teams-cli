@@ -17,16 +17,12 @@ You have access to a `teams` CLI tool that talks to Microsoft Teams.
 
 Before using any commands, check if the CLI is installed and the user is authenticated:
 
-1. **Check prerequisites:** Run `uv --version`. If `uv` is not found, ask the user if they'd like to install it. If yes, install via `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows). See https://docs.astral.sh/uv/getting-started/installation for other options.
-2. **Check if installed:** Run `teams --help` (or `uv run teams --help`). If the command is not found, install it:
+1. **Check if installed:** Run `teams --help` (or `npx teams-cli --help`). If the command is not found, install it:
    ```bash
-   git clone https://github.com/mingnz/teams-cli.git ~/.teams-cli-install
-   cd ~/.teams-cli-install
-   uv sync
-   uv run playwright install chromium
-   uv tool install -e .
+   npm install -g teams-cli
+   npx playwright install chromium
    ```
-3. **Check if authenticated:** Try a command like `teams chats`. If it fails with a token error, run `teams login` — this launches a browser for the user to sign in (including MFA). Tell the user a browser window has opened and to complete the sign-in. Wait for the command to finish. Only if `teams login` itself fails should you ask the user to run it manually.
+2. **Check if authenticated:** Try a command like `teams chats`. If it fails with a token error, run `teams login` — this launches a browser for the user to sign in (including MFA). Tell the user a browser window has opened and to complete the sign-in. Wait for the command to finish. Only if `teams login` itself fails should you ask the user to run it manually.
 
 Tokens refresh automatically via a headless browser between commands. If the session has fully expired, run `teams login` again.
 
