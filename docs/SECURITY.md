@@ -18,24 +18,24 @@ Running `teams logout` removes all stored tokens and the browser profile directo
 
 ## Transport security
 
-- All API communication uses HTTPS with certificate validation via httpx
+- All API communication uses HTTPS with certificate validation via Node.js native `fetch`
 - Bearer tokens are transmitted only in the `Authorization` header over TLS
 - No sensitive data is sent to third-party services — all requests go directly to Microsoft endpoints
 
 ## Input handling
 
 - API request bodies are constructed using structured JSON serialization, preventing malformed payloads
-- URL parameters are encoded via httpx's built-in handling
+- URL parameters are encoded via `URLSearchParams`
 - Server-side validation is performed by Microsoft's APIs on all inputs
 
 ## Dependencies
 
-All dependencies are well-maintained, widely used packages pinned via `uv.lock`:
+All dependencies are well-maintained, widely used packages pinned via `package-lock.json`:
 
-- **httpx** — HTTP client with TLS by default
-- **typer** — CLI framework (no network access)
-- **rich** — terminal output (display only)
-- **playwright** — browser automation (used only for authentication)
+- **commander** — CLI framework (no network access)
+- **chalk** — terminal colour output (display only)
+- **cli-table3** — terminal table rendering (display only)
+- **playwright** — browser automation (used only for authentication, dynamically imported at runtime)
 
 The repository has the following GitHub security features enabled:
 
