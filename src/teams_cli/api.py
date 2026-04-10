@@ -21,9 +21,7 @@ async def list_conversations(
     return resp.json().get("conversations", [])
 
 
-async def get_conversation(
-    client: httpx.AsyncClient, conversation_id: str
-) -> dict:
+async def get_conversation(client: httpx.AsyncClient, conversation_id: str) -> dict:
     """Get a single conversation's details."""
     base = get_chatsvc_base_url()
     resp = await client.get(

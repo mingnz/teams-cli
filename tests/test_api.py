@@ -57,7 +57,6 @@ class TestSendMessage:
 class TestGetThreadMembers:
     @pytest.mark.asyncio
     async def test_returns_members(self, client, httpx_mock: HTTPXMock):
-        threads_base = BASE.replace("/users/ME", "")
         httpx_mock.add_response(
             json={"members": [{"id": "8:orgid:user1"}]},
         )

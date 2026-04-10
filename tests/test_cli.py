@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 from typer.testing import CliRunner
 
 from teams_cli.cli import app
@@ -30,15 +29,21 @@ def test_chats_requires_auth(monkeypatch):
 
 def test_resolve_index(tmp_path, monkeypatch):
     chats_file = tmp_path / "last_chats.json"
-    chats_file.write_text(json.dumps([
-        {"index": 1, "id": "19:resolved@thread.v2", "name": "Test"},
-    ]))
+    chats_file.write_text(
+        json.dumps(
+            [
+                {"index": 1, "id": "19:resolved@thread.v2", "name": "Test"},
+            ]
+        )
+    )
     monkeypatch.setattr("teams_cli.cli.LAST_CHATS_FILE", chats_file)
 
     from teams_cli.cli import _resolve_conversation_id
+
     assert _resolve_conversation_id("1") == "19:resolved@thread.v2"
 
 
 def test_resolve_raw_id():
     from teams_cli.cli import _resolve_conversation_id
+
     assert _resolve_conversation_id("19:abc@thread.v2") == "19:abc@thread.v2"

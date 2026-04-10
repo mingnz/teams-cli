@@ -1,6 +1,5 @@
 """Tests for auth module."""
 
-import json
 import time
 
 import pytest
@@ -41,7 +40,9 @@ class TestIsExpired:
 class TestGetToken:
     def test_returns_secret(self, tokens_dir):
         _, tokens_file = tokens_dir
-        data = {"ic3": {"secret": "mytoken", "expires_on": str(int(time.time()) + 3600)}}
+        data = {
+            "ic3": {"secret": "mytoken", "expires_on": str(int(time.time()) + 3600)}
+        }
         save_tokens(data)
         assert get_token("ic3") == "mytoken"
 

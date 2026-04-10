@@ -3,7 +3,13 @@
 import json
 import time
 
-from .config import DATA_DIR, REGION_KEY_PATTERN, TEAMS_URL, TOKEN_AUDIENCES, TOKENS_FILE
+from .config import (
+    DATA_DIR,
+    REGION_KEY_PATTERN,
+    TEAMS_URL,
+    TOKEN_AUDIENCES,
+    TOKENS_FILE,
+)
 
 
 def save_tokens(tokens: dict) -> None:

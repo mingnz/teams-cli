@@ -1,7 +1,5 @@
 """HTTP client construction for Teams APIs."""
 
-import sys
-
 import httpx
 import typer
 

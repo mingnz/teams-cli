@@ -111,7 +111,9 @@ def chats(
 
 @app.command()
 def messages(
-    chat: str = typer.Argument(help="Chat index (from `teams chats`) or conversation ID."),
+    chat: str = typer.Argument(
+        help="Chat index (from `teams chats`) or conversation ID."
+    ),
     limit: int = typer.Option(20, "--limit", "-n", help="Number of messages to fetch."),
 ) -> None:
     """Read messages from a conversation."""
@@ -148,7 +150,9 @@ def send(
             return await send_message(client, conv_id, message)
 
     result = asyncio.run(_run())
-    console.print(f"[green]Sent.[/green] Arrival: {result.get('OriginalArrivalTime', 'ok')}")
+    console.print(
+        f"[green]Sent.[/green] Arrival: {result.get('OriginalArrivalTime', 'ok')}"
+    )
 
 
 @app.command()
@@ -170,7 +174,8 @@ def search(
             for hit in result.get("results", []):
                 body = strip_html(hit.get("preview", ""))
                 sender = hit.get("extensions", {}).get(
-                    "Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String", ""
+                    "Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String",
+                    "",
                 )
                 results.append({"sender": sender, "preview": body})
 
@@ -187,7 +192,12 @@ def search(
 
 @app.command()
 def activity(
-    feed: str = typer.Option("notifications", "--feed", "-f", help="Feed: notifications, mentions, or calllogs."),
+    feed: str = typer.Option(
+        "notifications",
+        "--feed",
+        "-f",
+        help="Feed: notifications, mentions, or calllogs.",
+    ),
     limit: int = typer.Option(20, "--limit", "-n", help="Number of items."),
 ) -> None:
     """Show the activity feed (notifications, mentions, or call logs)."""
