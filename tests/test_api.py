@@ -53,6 +53,19 @@ class TestSendMessage:
         result = await send_message(client, "19:abc", "hello")
         assert "OriginalArrivalTime" in result
 
+    @pytest.mark.asyncio
+    async def test_special_characters_in_message(self, client, httpx_mock: HTTPXMock):
+        """Verify messages with quotes and braces produce valid JSON."""
+        httpx_mock.add_response(json={"OriginalArrivalTime": "456"})
+        result = await send_message(client, "19:abc", 'He said "hello" & {test}')
+        assert "OriginalArrivalTime" in result
+        request = httpx_mock.get_requests()[0]
+        import json
+
+        body = json.loads(request.content)
+        assert body["content"] == '<p>He said "hello" & {test}</p>'
+        assert body["messagetype"] == "RichText/Html"
+
 
 class TestGetThreadMembers:
     @pytest.mark.asyncio
