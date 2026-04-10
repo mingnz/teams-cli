@@ -1,5 +1,10 @@
 # teams-cli
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+
 A command-line interface for Microsoft Teams. List chats, read and send messages, search, view activity, and more — all from your terminal.
 
 Uses the internal Teams Chat Service API (the same API the Teams web client uses), authenticated via a Playwright-based browser login flow.
@@ -14,7 +19,7 @@ Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 # Clone and install
-git clone <repo-url>
+git clone https://github.com/mingnz/teams-cli.git
 cd teams-cli
 uv sync
 uv run playwright install chromium
