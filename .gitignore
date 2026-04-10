@@ -7,6 +7,11 @@ dist/
 # Teams CLI data (tokens, caches)
 .teams-cli/
 
+# Claude Code / agent workspace
+.agents/
+.claude/
+skills-lock.json
+
 # Playwright
 .playwright-mcp/
 
