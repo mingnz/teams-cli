@@ -17,14 +17,14 @@ An [agent skill](skills/teams-cli/SKILL.md) is included that teaches coding agen
 
 ```sh
 # Install the skill
-npx @anthropic-ai/skills add https://github.com/mingnz/teams-cli
+npx skills add https://github.com/mingnz/teams-cli
 
 # Or copy skills/teams-cli/ into your project's .claude/skills/ directory
 ```
 
 ## Install
 
-Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 # Clone and install
@@ -45,7 +45,7 @@ Log in by launching a browser session. Sign in as you normally would (including 
 teams login
 ```
 
-Tokens are stored in `~/.teams-cli/tokens.json` and expire after the session lifetime set by your organisation (typically 1 hour). Re-run `teams login` when they expire.
+Tokens are stored in `~/.teams-cli/tokens.json`. Token lifetimes vary by API (the chat token lasts ~24 hours, the search token ~1.5 hours). Expired tokens are refreshed automatically via a headless browser using your saved session cookies — no manual re-login needed unless the session itself has expired.
 
 ## Usage
 
