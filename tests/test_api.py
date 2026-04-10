@@ -61,6 +61,7 @@ class TestSendMessage:
         assert "OriginalArrivalTime" in result
         request = httpx_mock.get_requests()[0]
         import json
+
         body = json.loads(request.content)
         assert body["content"] == '<p>He said "hello" & {test}</p>'
         assert body["messagetype"] == "RichText/Html"
