@@ -8,20 +8,23 @@ from rich.console import Console
 from rich.table import Table
 
 from .api import (
+    create_dm_thread,
     get_activity,
     get_messages,
     get_thread_members,
     list_conversations,
     search_messages,
+    search_people,
     send_message,
 )
-from .auth import login, logout
+from .auth import get_my_mri, login, logout
 from .client import get_chat_client, get_search_client
 from .config import LAST_CHATS_FILE, DATA_DIR
 from .formatting import (
     format_chat_list,
     format_member,
     format_message,
+    format_person,
     strip_html,
 )
 
@@ -231,6 +234,96 @@ def activity(
         console.print(f"[green]{m['time']}[/green] [bold]{m['sender']}[/bold]")
         console.print(f"  {m['body']}")
         console.print()
+
+
+@app.command()
+def find(
+    query: str = typer.Argument(help="Name or email to search for."),
+    limit: int = typer.Option(10, "--limit", "-n", help="Max results."),
+) -> None:
+    """Search for people by name or email."""
+    client = get_search_client()
+
+    async def _run() -> list[dict]:
+        async with client:
+            return await search_people(client, query, size=limit)
+
+    results = asyncio.run(_run())
+    if not results:
+        typer.echo("No people found.")
+        raise typer.Exit()
+
+    table = Table(title="People")
+    table.add_column("#", style="cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Email")
+    table.add_column("Title", style="dim")
+    table.add_column("MRI", style="dim")
+
+    for i, person in enumerate(results, 1):
+        p = format_person(person)
+        table.add_row(str(i), p["name"], p["email"], p["title"], p["mri"])
+
+    console.print(table)
+
+
+@app.command()
+def dm(
+    user: str = typer.Argument(
+        help="User name to search, email, or MRI (8:orgid:...)."
+    ),
+    message: str = typer.Argument(help="Message text to send."),
+) -> None:
+    """Send a direct message to a user by name, email, or MRI."""
+    my_mri = get_my_mri()
+    if not my_mri:
+        typer.echo("Could not determine your user ID. Run `teams login`.", err=True)
+        raise typer.Exit(1)
+
+    # If it looks like an MRI, use it directly
+    if user.startswith("8:orgid:"):
+        their_mri = user
+    else:
+        # Search for the user
+        search_client = get_search_client()
+
+        async def _search() -> list[dict]:
+            async with search_client:
+                return await search_people(search_client, user, size=5)
+
+        results = asyncio.run(_search())
+        if not results:
+            typer.echo(f"No user found matching '{user}'.", err=True)
+            raise typer.Exit(1)
+
+        if len(results) == 1:
+            their_mri = results[0]["MRI"]
+            name = results[0].get("DisplayName", user)
+        else:
+            # Show matches and pick the first
+            console.print(f"[yellow]Multiple matches for '{user}':[/yellow]")
+            for i, r in enumerate(results, 1):
+                emails = r.get("EmailAddresses", [])
+                email = emails[0] if emails else ""
+                console.print(f"  {i}. {r.get('DisplayName', '?')} ({email})")
+            console.print("[green]Using first match.[/green]")
+            their_mri = results[0]["MRI"]
+            name = results[0].get("DisplayName", user)
+
+        console.print(f"Sending DM to [bold]{name}[/bold]...")
+
+    # Create or get the 1:1 thread, then send the message
+    chat_client = get_chat_client()
+
+    async def _send() -> dict:
+        async with chat_client:
+            conv_id = await create_dm_thread(chat_client, my_mri, their_mri)
+            return await send_message(chat_client, conv_id, message)
+
+    result = asyncio.run(_send())
+    console.print(
+        f"[green]Sent.[/green] Arrival: {result.get('OriginalArrivalTime', 'ok')}"
+    )
 
 
 @app.command()

@@ -1,5 +1,6 @@
 """Token management and Playwright-based login flow."""
 
+import base64
 import json
 import shutil
 import time
@@ -130,6 +131,29 @@ def get_token(name: str) -> str | None:
                 return entry.get("secret")
         return None
     return entry["secret"]
+
+
+def get_my_mri() -> str | None:
+    """Get the current user's MRI by decoding the OID from the ic3 JWT token."""
+    tokens = load_tokens()
+    if not tokens:
+        return None
+    entry = tokens.get("ic3", {})
+    secret = entry.get("secret", "")
+    if not secret:
+        return None
+    try:
+        # JWT has 3 parts: header.payload.signature
+        payload = secret.split(".")[1]
+        # Add padding
+        payload += "=" * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        oid = claims.get("oid")
+        if oid:
+            return f"8:orgid:{oid}"
+    except Exception:
+        pass
+    return None
 
 
 def get_region() -> str | None:
