@@ -125,18 +125,10 @@ uv run pytest -v
 ## Project structure
 
 ```
-src/teams_cli/
-  config.py       # Constants and paths
-  auth.py         # Token management and Playwright login
-  client.py       # HTTP client factories
-  api.py          # Async API functions
-  formatting.py   # Output formatting
-  cli.py          # Typer command definitions
-tests/
-  test_auth.py
-  test_api.py
-  test_cli.py
-  test_formatting.py
+src/teams_cli/    # CLI source — auth, API calls, formatting, commands
+tests/            # Unit tests for all modules
+skills/           # Agent skill for AI-assisted Teams interaction
+docs/             # Architecture and security documentation
 ```
 
 ## Disclaimer
