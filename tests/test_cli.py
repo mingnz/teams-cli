@@ -19,6 +19,7 @@ def test_help():
     assert "activity" in result.output
     assert "find" in result.output
     assert "dm" in result.output
+    assert "watch" in result.output
     assert "members" in result.output
 
 

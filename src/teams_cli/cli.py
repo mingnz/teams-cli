@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 
 import typer
 from rich.console import Console
@@ -13,6 +14,8 @@ from .api import (
     get_messages,
     get_thread_members,
     list_conversations,
+    poll_conversations,
+    poll_messages,
     search_messages,
     search_people,
     send_message,
@@ -25,6 +28,7 @@ from .formatting import (
     format_member,
     format_message,
     format_person,
+    get_conversation_display_name,
     strip_html,
 )
 
@@ -324,6 +328,104 @@ def dm(
     console.print(
         f"[green]Sent.[/green] Arrival: {result.get('OriginalArrivalTime', 'ok')}"
     )
+
+
+@app.command()
+def watch(
+    chat: str = typer.Argument(
+        None, help="Chat short ID or conversation ID. Omit to watch all chats."
+    ),
+    interval: int = typer.Option(
+        3, "--interval", "-i", help="Poll interval in seconds."
+    ),
+) -> None:
+    """Watch a chat (or all chats) for new messages in real-time.
+
+    Press Ctrl+C to stop.
+    """
+    client = get_chat_client()
+
+    if chat:
+        conv_id = _resolve_conversation_id(chat)
+        _watch_chat(client, conv_id, interval)
+    else:
+        _watch_all(client, interval)
+
+
+def _watch_chat(client, conv_id: str, interval: int) -> None:
+    """Poll a single conversation for new messages."""
+
+    async def _init() -> str:
+        async with client:
+            _, sync_url = await poll_messages(client, conv_id)
+            return sync_url
+
+    sync_url = asyncio.run(_init())
+    console.print(
+        f"[dim]Watching for new messages (poll every {interval}s). Ctrl+C to stop.[/dim]"
+    )
+
+    try:
+        while True:
+            time.sleep(interval)
+            poll_client = get_chat_client()
+
+            async def _poll() -> tuple[list[dict], str]:
+                async with poll_client:
+                    return await poll_messages(poll_client, conv_id, sync_url=sync_url)
+
+            raw, sync_url = asyncio.run(_poll())
+            msgs = [m for m in (format_message(r) for r in raw) if m]
+            for m in msgs:
+                console.print(f"[green]{m['time']}[/green] [bold]{m['sender']}[/bold]")
+                console.print(f"  {m['body']}")
+                console.print()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped watching.[/dim]")
+
+
+def _watch_all(client, interval: int) -> None:
+    """Poll all conversations for new activity."""
+    chats = _load_chat_index()
+    chat_names = {c["id"]: c["name"] for c in chats}
+
+    async def _init() -> str:
+        async with client:
+            _, sync_url = await poll_conversations(client)
+            return sync_url
+
+    sync_url = asyncio.run(_init())
+    console.print(
+        f"[dim]Watching all chats (poll every {interval}s). Ctrl+C to stop.[/dim]"
+    )
+
+    try:
+        while True:
+            time.sleep(interval)
+            poll_client = get_chat_client()
+
+            async def _poll() -> tuple[list[dict], str]:
+                async with poll_client:
+                    return await poll_conversations(poll_client, sync_url=sync_url)
+
+            convos, sync_url = asyncio.run(_poll())
+            for conv in convos:
+                conv_id = conv.get("id", "")
+                if conv_id.startswith("48:"):
+                    continue
+                last_msg = conv.get("lastMessage", {})
+                msg = format_message(last_msg)
+                if not msg:
+                    continue
+                name = chat_names.get(conv_id, get_conversation_display_name(conv))
+                console.print(
+                    f"[cyan]{name}[/cyan] "
+                    f"[green]{msg['time']}[/green] [bold]{msg['sender']}[/bold]"
+                )
+                console.print(f"  {msg['body']}")
+                console.print()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped watching.[/dim]")
 
 
 @app.command()

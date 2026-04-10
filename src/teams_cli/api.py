@@ -1,6 +1,7 @@
 """Teams API functions."""
 
 import random
+import time
 import uuid
 
 import httpx
@@ -233,6 +234,70 @@ async def create_dm_thread(
         ]
     )
     return f"19:{uuids[0]}_{uuids[1]}@unq.gbl.spaces"
+
+
+async def poll_messages(
+    client: httpx.AsyncClient,
+    conversation_id: str,
+    sync_url: str | None = None,
+    page_size: int = 50,
+) -> tuple[list[dict], str]:
+    """Poll for new messages using delta sync.
+
+    On first call, pass sync_url=None to establish a sync anchor at the
+    current time (returns no messages). On subsequent calls, pass the
+    sync_url from the previous response to get only new messages.
+
+    Returns (messages, next_sync_url).
+    """
+    if sync_url:
+        resp = await client.get(sync_url)
+    else:
+        base = get_chatsvc_base_url()
+        resp = await client.get(
+            f"{base}/conversations/{conversation_id}/messages",
+            params={
+                "view": "msnp24Equivalent|supportsMessageProperties",
+                "pageSize": str(page_size),
+                "startTime": str(int(time.time() * 1000)),
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    messages = data.get("messages", [])
+    next_sync_url = data.get("_metadata", {}).get("syncState", "")
+    return messages, next_sync_url
+
+
+async def poll_conversations(
+    client: httpx.AsyncClient,
+    sync_url: str | None = None,
+    page_size: int = 30,
+) -> tuple[list[dict], str]:
+    """Poll for conversation updates using delta sync.
+
+    Works like poll_messages but at the conversations level — returns
+    conversations that have new activity since the last sync.
+
+    Returns (conversations, next_sync_url).
+    """
+    if sync_url:
+        resp = await client.get(sync_url)
+    else:
+        base = get_chatsvc_base_url()
+        resp = await client.get(
+            f"{base}/conversations",
+            params={
+                "view": "msnp24Equivalent",
+                "pageSize": str(page_size),
+                "startTime": str(int(time.time() * 1000)),
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    conversations = data.get("conversations", [])
+    next_sync_url = data.get("_metadata", {}).get("syncState", "")
+    return conversations, next_sync_url
 
 
 async def search_messages(

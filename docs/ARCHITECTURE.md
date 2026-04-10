@@ -70,6 +70,7 @@ Key design decisions:
 - `search_messages()` builds the full Substrate Search API request body including correlation IDs and dimension metadata
 - `search_people()` uses the Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`) — the same people picker endpoint the Teams web client uses when composing a new chat
 - `create_dm_thread()` creates (or retrieves) a 1:1 chat thread via `POST /threads` with `uniquerosterthread: true`, which makes it idempotent — it returns the existing thread if one already exists
+- `poll_messages()` and `poll_conversations()` implement delta sync polling. The first call (with `sync_url=None`) sends `startTime=now` to establish a sync anchor and returns no messages. Subsequent calls pass the `syncState` URL from the previous response and get only new items. Returns `(items, next_sync_url)`.
 - `get_activity()` is a thin wrapper around `get_messages()` that targets the system conversations (`48:notifications`, `48:mentions`, `48:calllogs`)
 
 ### formatting.py
@@ -95,7 +96,9 @@ Typer command definitions. Each command follows the same pattern:
 4. Format the results
 5. Render with Rich (tables for lists, plain text for messages)
 
-The chat index system works by having `teams chats` cache its formatted output to `~/.teams-cli/last_chats.json`. Other commands read this file to resolve numeric indices to conversation IDs, so `teams messages 3` works without the user needing to copy-paste long IDs.
+The chat index system works by having `teams chats` cache its formatted output to `~/.teams-cli/last_chats.json`. Other commands read this file to resolve short IDs to conversation IDs, so `teams messages abc1` works without the user needing to copy-paste long IDs.
+
+The `watch` command is the exception — it uses a poll loop instead of a single `asyncio.run()`. It creates a fresh `httpx.AsyncClient` per poll iteration because tokens may be refreshed between polls. The loop runs synchronously with `time.sleep()` between polls, calling `asyncio.run()` for each HTTP request.
 
 ## API surfaces
 
@@ -107,7 +110,7 @@ The primary API for conversations, messages, and members.
 
 - Base URL: `https://teams.cloud.microsoft/api/chatsvc/{region}/v1/users/ME`
 - Token audience: `ic3.teams.office.com`
-- Used by: `chats`, `messages`, `send`, `dm` (thread creation + send), `activity`, `members`
+- Used by: `chats`, `messages`, `send`, `dm` (thread creation + send), `watch`, `activity`, `members`
 
 ### Substrate Search API
 
