@@ -37,6 +37,9 @@ This is a Python CLI for Microsoft Teams that talks directly to the internal Tea
 ### Key design details
 
 - `send_message()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid`
+- `create_dm_thread()` uses `POST /threads` (without `/users/ME`) with `uniquerosterthread: true` for idempotent 1:1 chat creation
+- `search_people()` uses Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`), same endpoint as the Teams web client people picker
+- `get_my_mri()` extracts the user's MRI from the ic3 JWT token's `oid` claim — no extra API call needed
 - Members are at `/threads/{id}`, not `/conversations/{id}/members`
 - Activity feed reuses `get_messages()` with system conversation IDs (`48:notifications`, `48:mentions`, `48:calllogs`)
 - System conversations (ID prefix `48:`) are filtered out of chat listings
