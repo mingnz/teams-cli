@@ -38,6 +38,7 @@ Handles token persistence, automatic refresh, and the Playwright login flow.
 - `save_tokens()` / `load_tokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
 - `is_expired()` / `get_token()` — check token expiry, attempt silent refresh if expired, and retrieve by name
 - `get_region()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
+- `get_my_mri()` — extracts the current user's MRI (`8:orgid:{oid}`) by decoding the `oid` claim from the ic3 JWT token. Used by the `dm` command to construct thread creation requests.
 - `_try_refresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `True` on success, `False` if the session itself has expired.
 - `login()` — the interactive login flow:
   1. Launches Chromium (headless=False) with a persistent browser profile so session cookies are preserved
@@ -67,6 +68,8 @@ Key design decisions:
 - `send_message()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid`, matching the Teams web client's behaviour
 - `get_thread_members()` uses the `/threads/{id}` endpoint rather than `/conversations/{id}/members` (which returns 404)
 - `search_messages()` builds the full Substrate Search API request body including correlation IDs and dimension metadata
+- `search_people()` uses the Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`) — the same people picker endpoint the Teams web client uses when composing a new chat
+- `create_dm_thread()` creates (or retrieves) a 1:1 chat thread via `POST /threads` with `uniquerosterthread: true`, which makes it idempotent — it returns the existing thread if one already exists
 - `get_activity()` is a thin wrapper around `get_messages()` that targets the system conversations (`48:notifications`, `48:mentions`, `48:calllogs`)
 
 ### formatting.py
@@ -79,6 +82,7 @@ Pure functions that transform API response dicts into display-ready dicts. No I/
 - `get_conversation_type()` — maps thread type strings to human labels
 - `format_chat_list()` — filters out system conversations (ID prefix `48:`), assigns sequential index numbers, and builds preview strings
 - `format_message()` — returns `None` for non-displayable messages (system events, call notifications), keeping the filtering logic out of `cli.py`
+- `format_person()` — formats a people search result into a display dict with name, email, MRI, title, department, and company
 - `format_member()` — determines member type from MRI prefix (`8:orgid:` = User, `28:` = Bot)
 
 ### cli.py
@@ -103,7 +107,7 @@ The primary API for conversations, messages, and members.
 
 - Base URL: `https://teams.cloud.microsoft/api/chatsvc/{region}/v1/users/ME`
 - Token audience: `ic3.teams.office.com`
-- Used by: `chats`, `messages`, `send`, `activity`, `members`
+- Used by: `chats`, `messages`, `send`, `dm` (thread creation + send), `activity`, `members`
 
 ### Substrate Search API
 
@@ -111,7 +115,7 @@ Microsoft's unified search service, used here for message search.
 
 - Base URL: `https://substrate.office.com`
 - Token audience: `outlook.office.com/search`
-- Used by: `search`
+- Used by: `search`, `find`, `dm` (people search step)
 
 ### Presence API
 

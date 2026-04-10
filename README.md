@@ -57,6 +57,13 @@ teams messages "19:abc123@thread.v2"
 # Send a message
 teams send 3 "Hello from the CLI"
 
+# Find a person by name or email
+teams find "Jane Smith"
+
+# Send a direct message (creates 1:1 chat if needed)
+teams dm "Jane Smith" "Hey, quick question"
+teams dm "8:orgid:00000000-0000-..." "Hello via MRI"
+
 # Search across all conversations
 teams search "quarterly report"
 
@@ -99,7 +106,8 @@ uv run pytest -v
 1. `teams login` opens Chromium via Playwright, navigates to Teams, and waits for you to complete sign-in
 2. Auth tokens are extracted from the browser's `localStorage` (three tokens: chat, search, presence) along with your region
 3. CLI commands use these tokens to call the Teams Chat Service API (`teams.cloud.microsoft/api/chatsvc/`) and the Substrate Search API (`substrate.office.com`) directly via `httpx`
-4. The `teams chats` command caches the conversation list locally so you can reference chats by index number in subsequent commands
+4. The `teams chats` command caches the conversation list locally so you can reference chats by short ID in subsequent commands
+5. The `teams dm` command searches for a user via the Substrate Suggestions API, creates a 1:1 thread via `POST /threads`, and sends the message — all in one step
 
 ## Project structure
 

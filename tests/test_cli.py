@@ -17,6 +17,8 @@ def test_help():
     assert "send" in result.output
     assert "search" in result.output
     assert "activity" in result.output
+    assert "find" in result.output
+    assert "dm" in result.output
     assert "members" in result.output
 
 

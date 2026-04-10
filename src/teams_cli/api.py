@@ -113,6 +113,128 @@ async def mark_as_read(
     resp.raise_for_status()
 
 
+async def search_people(
+    client: httpx.AsyncClient, query: str, size: int = 10
+) -> list[dict]:
+    """Search for people by name using the Substrate Suggestions API.
+
+    Returns list of person dicts with keys like DisplayName, MRI,
+    EmailAddresses, UserPrincipalName, ExternalDirectoryObjectId, etc.
+    """
+    cvid = str(uuid.uuid4())
+    logical_id = str(uuid.uuid4())
+    body = {
+        "EntityRequests": [
+            {
+                "Query": {
+                    "QueryString": query,
+                    "DisplayQueryString": query,
+                },
+                "EntityType": "People",
+                "Size": size,
+                "Fields": [
+                    "Id",
+                    "MRI",
+                    "DisplayName",
+                    "EmailAddresses",
+                    "PeopleType",
+                    "PeopleSubtype",
+                    "UserPrincipalName",
+                    "GivenName",
+                    "Surname",
+                    "ExternalDirectoryObjectId",
+                    "CompanyName",
+                    "JobTitle",
+                    "Department",
+                ],
+                "Filter": {
+                    "And": [
+                        {
+                            "Or": [
+                                {"Term": {"PeopleType": "Person"}},
+                                {"Term": {"PeopleType": "Other"}},
+                            ]
+                        },
+                        {
+                            "Or": [
+                                {"Term": {"PeopleSubtype": "OrganizationUser"}},
+                                {"Term": {"PeopleSubtype": "MTOUser"}},
+                                {"Term": {"PeopleSubtype": "Guest"}},
+                            ]
+                        },
+                        {"Or": [{"Term": {"Flags": "NonHidden"}}]},
+                    ]
+                },
+                "Provenances": ["Mailbox", "Directory"],
+                "From": 0,
+                "ServeNoEmailContacts": True,
+            }
+        ],
+        "Scenario": {"Name": "peoplepicker.newChat"},
+        "Cvid": cvid,
+        "AppName": "Microsoft Teams",
+        "LogicalId": logical_id,
+    }
+    resp = await client.post(
+        "/search/api/v1/suggestions",
+        params={"scenario": "peoplepicker.newChat"},
+        json=body,
+        headers={
+            "x-client-flights": "EnableSelfSuggestion,TeamsHiddenPeopleDirectorySearch"
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    # Extract people from the Groups response
+    for group in data.get("Groups", []):
+        if group.get("Type") == "People":
+            return group.get("Suggestions", [])
+    return []
+
+
+async def create_dm_thread(
+    client: httpx.AsyncClient, my_mri: str, their_mri: str
+) -> str:
+    """Create (or get) a 1:1 DM thread with another user.
+
+    Args:
+        my_mri: Your MRI (e.g. '8:orgid:{uuid}').
+        their_mri: Their MRI (e.g. '8:orgid:{uuid}').
+
+    Returns the conversation ID.
+    """
+    base = get_chatsvc_base_url()
+    threads_base = base.replace("/users/ME", "")
+    resp = await client.post(
+        f"{threads_base}/threads",
+        json={
+            "members": [
+                {"id": my_mri, "role": "Admin"},
+                {"id": their_mri, "role": "Admin"},
+            ],
+            "properties": {
+                "threadType": "chat",
+                "fixedRoster": True,
+                "uniquerosterthread": True,
+            },
+        },
+    )
+    resp.raise_for_status()
+    # The response Location header or body contains the thread ID
+    # Extract from Location header: .../threads/19:...@unq.gbl.spaces
+    location = resp.headers.get("location", "")
+    if "/threads/" in location:
+        return location.split("/threads/")[-1]
+    # Fallback: construct deterministic ID from sorted UUIDs
+    uuids = sorted(
+        [
+            my_mri.replace("8:orgid:", ""),
+            their_mri.replace("8:orgid:", ""),
+        ]
+    )
+    return f"19:{uuids[0]}_{uuids[1]}@unq.gbl.spaces"
+
+
 async def search_messages(
     client: httpx.AsyncClient, query: str, size: int = 25, offset: int = 0
 ) -> dict:

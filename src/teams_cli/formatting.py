@@ -147,6 +147,20 @@ def format_message(msg: dict) -> dict | None:
     }
 
 
+def format_person(person: dict) -> dict:
+    """Format a person search result for display."""
+    emails = person.get("EmailAddresses", [])
+    return {
+        "name": person.get("DisplayName", ""),
+        "email": emails[0] if emails else "",
+        "mri": person.get("MRI", ""),
+        "title": person.get("JobTitle", ""),
+        "department": person.get("Department", ""),
+        "company": person.get("CompanyName", ""),
+        "type": person.get("PeopleSubtype", ""),
+    }
+
+
 def format_member(member: dict) -> dict:
     """Format a member for display."""
     mri = member.get("id", "")
