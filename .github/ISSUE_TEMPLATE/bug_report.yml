@@ -1,0 +1,37 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands or steps to reproduce the issue.
+      placeholder: |
+        1. Run `teams chats`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: Paste any error messages or tracebacks.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.3"
