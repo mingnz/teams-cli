@@ -18,6 +18,8 @@ An [agent skill](skills/teams-cli/SKILL.md) is included that teaches coding agen
 ```sh
 # Install the skill
 npx @anthropic-ai/skills add https://github.com/mingnz/teams-cli
+# or
+npx skills add https://github.com/mingnz/teams-cli
 
 # Or copy skills/teams-cli/ into your project's .claude/skills/ directory
 ```
