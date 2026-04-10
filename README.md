@@ -1,5 +1,6 @@
 # teams-cli
 
+[![npm](https://img.shields.io/npm/v/teams-cli.svg)](https://www.npmjs.com/package/teams-cli)
 [![Node.js 18+](https://img.shields.io/badge/node-18%2B-blue.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CodeQL](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql)
@@ -38,7 +39,6 @@ git clone https://github.com/mingnz/teams-cli.git
 cd teams-cli
 npm install
 npm run build
-npx playwright install chromium
 ```
 
 ## Authentication

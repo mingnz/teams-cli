@@ -20,7 +20,6 @@ Before using any commands, check if the CLI is installed and the user is authent
 1. **Check if installed:** Run `teams --help` (or `npx teams-cli --help`). If the command is not found, install it:
    ```bash
    npm install -g teams-cli
-   npx playwright install chromium
    ```
 2. **Check if authenticated:** Try a command like `teams chats`. If it fails with a token error, run `teams login` — this launches a browser for the user to sign in (including MFA). Tell the user a browser window has opened and to complete the sign-in. Wait for the command to finish. Only if `teams login` itself fails should you ask the user to run it manually.
 
