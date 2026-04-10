@@ -15,5 +15,8 @@ wheels/
 # Playwright
 .playwright-mcp/
 
+# API docs (local reference only)
+docs/TEAMS_API.md
+
 # OS
 .DS_Store
