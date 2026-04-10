@@ -13,6 +13,15 @@ Uses the internal Teams Chat Service API (the same API the Teams web client uses
 
 This CLI can be used as a tool for AI agents (e.g. Claude Code, Codex, GitHub Copilot) to access Microsoft Teams on your behalf — without needing a direct Microsoft integration. Most Teams integrations require Entra ID app registrations and tenant admin approval. This doesn't.
 
+An [agent skill](skills/teams-cli/SKILL.md) is included that teaches coding agents how to use the CLI — install it and your agent can read your messages, send DMs, search chats, and more:
+
+```sh
+# Install the skill
+npx @anthropic-ai/skills add https://github.com/mingnz/teams-cli
+
+# Or copy skills/teams-cli/ into your project's .claude/skills/ directory
+```
+
 ## Disclaimer
 
 This project is not affiliated with, endorsed by, or associated with Microsoft. It uses undocumented internal APIs that Microsoft can change or restrict at any time without notice. Use at your own risk — this tool may break unexpectedly.
