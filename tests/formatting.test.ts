@@ -24,7 +24,9 @@ describe("stripHtml", () => {
 
 describe("formatTimestamp", () => {
   it("formats ISO date", () => {
-    expect(formatTimestamp("2025-01-15T10:30:00.000Z")).toBe("2025-01-15 10:30");
+    expect(formatTimestamp("2025-01-15T10:30:00.000Z")).toBe(
+      "2025-01-15 10:30",
+    );
   });
   it("returns empty for null", () => {
     expect(formatTimestamp(null)).toBe("");
@@ -33,7 +35,9 @@ describe("formatTimestamp", () => {
     expect(formatTimestamp("")).toBe("");
   });
   it("falls back for invalid date", () => {
-    expect(formatTimestamp("not-a-date-but-long-enough")).toBe("not-a-date-but-l");
+    expect(formatTimestamp("not-a-date-but-long-enough")).toBe(
+      "not-a-date-but-l",
+    );
   });
 });
 
@@ -55,24 +59,40 @@ const systemConversation = {
 
 describe("getConversationDisplayName", () => {
   it("uses topic", () => {
-    expect(getConversationDisplayName(sampleConversation)).toBe("Project Alpha");
+    expect(getConversationDisplayName(sampleConversation)).toBe(
+      "Project Alpha",
+    );
   });
   it("falls back to sender", () => {
-    const conv = { id: "19:abc@thread.v2", threadProperties: {}, lastMessage: { imdisplayname: "Alice" } };
+    const conv = {
+      id: "19:abc@thread.v2",
+      threadProperties: {},
+      lastMessage: { imdisplayname: "Alice" },
+    };
     expect(getConversationDisplayName(conv)).toBe("Chat with Alice");
   });
   it("falls back to id", () => {
-    const conv = { id: "19:abc@thread.v2", threadProperties: {}, lastMessage: {} };
+    const conv = {
+      id: "19:abc@thread.v2",
+      threadProperties: {},
+      lastMessage: {},
+    };
     expect(getConversationDisplayName(conv)).toBe("19:abc@thread.v2");
   });
 });
 
 describe("getConversationType", () => {
   it("uses product type", () => {
-    expect(getConversationType({ threadProperties: { productThreadType: "TeamChannel" } })).toBe("TeamChannel");
+    expect(
+      getConversationType({
+        threadProperties: { productThreadType: "TeamChannel" },
+      }),
+    ).toBe("TeamChannel");
   });
   it("maps thread type", () => {
-    expect(getConversationType({ threadProperties: { threadType: "meeting" } })).toBe("Meeting");
+    expect(
+      getConversationType({ threadProperties: { threadType: "meeting" } }),
+    ).toBe("Meeting");
   });
   it("defaults to Chat", () => {
     expect(getConversationType({ threadProperties: {} })).toBe("Chat");
@@ -84,9 +104,9 @@ describe("makeShortId", () => {
     expect(makeShortId("19:abc123@thread.v2")).toBe("abc123");
   });
   it("extracts from thread.tacv2", () => {
-    expect(makeShortId("19:73e9410b1e38453d94aa78274efcf175@thread.tacv2")).toBe(
-      "73e9410b1e38453d94aa78274efcf175",
-    );
+    expect(
+      makeShortId("19:73e9410b1e38453d94aa78274efcf175@thread.tacv2"),
+    ).toBe("73e9410b1e38453d94aa78274efcf175");
   });
   it("handles no prefix", () => {
     expect(makeShortId("abc@thread.v2")).toBe("abc");
@@ -133,11 +153,13 @@ describe("formatMessage", () => {
     };
     const result = formatMessage(msg);
     expect(result).not.toBeNull();
-    expect(result!.sender).toBe("Bob");
-    expect(result!.body).toBe("Hey there!");
+    expect(result?.sender).toBe("Bob");
+    expect(result?.body).toBe("Hey there!");
   });
   it("skips system message", () => {
-    expect(formatMessage({ messagetype: "Event/Call", content: "call started" })).toBeNull();
+    expect(
+      formatMessage({ messagetype: "Event/Call", content: "call started" }),
+    ).toBeNull();
   });
   it("skips empty content", () => {
     expect(formatMessage({ messagetype: "Text", content: "" })).toBeNull();
@@ -146,13 +168,21 @@ describe("formatMessage", () => {
 
 describe("formatMember", () => {
   it("formats user member", () => {
-    const result = formatMember({ id: "8:orgid:user-uuid-123", friendlyName: "Alice Smith", role: "Admin" });
+    const result = formatMember({
+      id: "8:orgid:user-uuid-123",
+      friendlyName: "Alice Smith",
+      role: "Admin",
+    });
     expect(result.name).toBe("Alice Smith");
     expect(result.type).toBe("User");
     expect(result.role).toBe("Admin");
   });
   it("detects bot", () => {
-    const result = formatMember({ id: "28:bot-id", friendlyName: "Helper Bot", role: "User" });
+    const result = formatMember({
+      id: "28:bot-id",
+      friendlyName: "Helper Bot",
+      role: "User",
+    });
     expect(result.type).toBe("Bot");
   });
   it("falls back to mri for name", () => {

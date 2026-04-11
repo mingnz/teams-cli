@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,5 +18,6 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm run lint
       - run: npx tsup
       - run: npx vitest run

@@ -1,7 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { Command } from "commander";
 import chalk from "chalk";
 import Table from "cli-table3";
+import { Command } from "commander";
+import {
+  createDmThread,
+  getActivity,
+  getMessages,
+  getThreadMembers,
+  listConversations,
+  pollConversations,
+  pollMessages,
+  searchMessages,
+  searchPeople,
+  sendMessage,
+} from "./api.js";
 import { getMyMri, login, logout } from "./auth.js";
 import { getChatClient, getSearchClient } from "./client.js";
 import { DATA_DIR, LAST_CHATS_FILE } from "./config.js";
@@ -15,18 +27,6 @@ import {
   getConversationDisplayName,
   stripHtml,
 } from "./formatting.js";
-import {
-  createDmThread,
-  getActivity,
-  getMessages,
-  getThreadMembers,
-  listConversations,
-  pollConversations,
-  pollMessages,
-  searchMessages,
-  searchPeople,
-  sendMessage,
-} from "./api.js";
 
 function saveChatIndex(chats: FormattedChat[]): void {
   mkdirSync(DATA_DIR, { recursive: true });
@@ -44,7 +44,9 @@ function resolveConversationId(idOrShort: string): string {
   for (const c of chats) {
     if (c.short_id === idOrShort) return c.id;
   }
-  console.error(`Short ID '${idOrShort}' not found. Run \`teams chats\` first.`);
+  console.error(
+    `Short ID '${idOrShort}' not found. Run \`teams chats\` first.`,
+  );
   process.exit(1);
 }
 
@@ -60,18 +62,24 @@ export function createProgram(): Command {
   const program = new Command();
   program
     .name("teams")
-    .description("CLI for Microsoft Teams - list chats, read and send messages, search, and more.")
+    .description(
+      "CLI for Microsoft Teams - list chats, read and send messages, search, and more.",
+    )
     .version("0.1.0");
 
   // login
   program
     .command("login")
-    .description("Launch a browser to sign in to Microsoft Teams and store auth tokens.")
+    .description(
+      "Launch a browser to sign in to Microsoft Teams and store auth tokens.",
+    )
     .action(async () => {
       try {
         const tokens = await login();
         const names = Object.keys(tokens).filter((k) => k !== "region");
-        console.log(chalk.green("Logged in.") + ` Tokens saved: ${names.join(", ")}`);
+        console.log(
+          `${chalk.green("Logged in.")} Tokens saved: ${names.join(", ")}`,
+        );
       } catch (e) {
         console.error((e as Error).message);
         process.exit(1);
@@ -103,7 +111,13 @@ export function createProgram(): Command {
         style: { head: ["cyan"] },
       });
       for (const c of formatted) {
-        table.push([c.short_id, c.name, c.type, c.preview.slice(0, 60), c.time]);
+        table.push([
+          c.short_id,
+          c.name,
+          c.type,
+          c.preview.slice(0, 60),
+          c.time,
+        ]);
       }
       console.log(table.toString());
     });
@@ -117,7 +131,9 @@ export function createProgram(): Command {
       const convId = resolveConversationId(chat);
       const client = await getChatClient();
       const raw = await getMessages(client, convId, Number(opts.limit));
-      const msgs = raw.map((r) => formatMessage(r)).filter((m): m is FormattedMessage => m !== null);
+      const msgs = raw
+        .map((r) => formatMessage(r))
+        .filter((m): m is FormattedMessage => m !== null);
 
       if (msgs.length === 0) {
         console.log("No displayable messages.");
@@ -134,7 +150,10 @@ export function createProgram(): Command {
       const convId = resolveConversationId(chat);
       const client = await getChatClient();
       const result = await sendMessage(client, convId, message);
-      console.log(chalk.green("Sent.") + ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`);
+      console.log(
+        chalk.green("Sent.") +
+          ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+      );
     });
 
   // search
@@ -147,13 +166,19 @@ export function createProgram(): Command {
       const data = await searchMessages(client, query, Number(opts.limit));
 
       const results: { sender: string; preview: string }[] = [];
-      for (const entitySet of (data.entitySets as Record<string, unknown>[]) ?? []) {
-        for (const resultSet of (entitySet.resultSets as Record<string, unknown>[]) ?? []) {
-          for (const hit of (resultSet.results as Record<string, unknown>[]) ?? []) {
+      for (const entitySet of (data.entitySets as Record<string, unknown>[]) ??
+        []) {
+        for (const resultSet of (entitySet.resultSets as Record<
+          string,
+          unknown
+        >[]) ?? []) {
+          for (const hit of (resultSet.results as Record<string, unknown>[]) ??
+            []) {
             const body = stripHtml((hit.preview as string) ?? "");
             const extensions = (hit.extensions as Record<string, string>) ?? {};
             const sender =
-              extensions.Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String ?? "";
+              extensions.Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String ??
+              "";
             results.push({ sender, preview: body });
           }
         }
@@ -165,7 +190,9 @@ export function createProgram(): Command {
       }
       for (let i = 0; i < results.length; i++) {
         const r = results[i];
-        console.log(`${chalk.cyan(`${i + 1}.`)} ${chalk.bold(r.sender || "Unknown")}`);
+        console.log(
+          `${chalk.cyan(`${i + 1}.`)} ${chalk.bold(r.sender || "Unknown")}`,
+        );
         console.log(`   ${r.preview.slice(0, 120)}`);
         console.log();
       }
@@ -174,13 +201,21 @@ export function createProgram(): Command {
   // activity
   program
     .command("activity")
-    .description("Show the activity feed (notifications, mentions, or call logs).")
-    .option("-f, --feed <feed>", "Feed: notifications, mentions, or calllogs", "notifications")
+    .description(
+      "Show the activity feed (notifications, mentions, or call logs).",
+    )
+    .option(
+      "-f, --feed <feed>",
+      "Feed: notifications, mentions, or calllogs",
+      "notifications",
+    )
     .option("-n, --limit <number>", "Number of items", "20")
     .action(async (opts) => {
       const client = await getChatClient();
       const raw = await getActivity(client, opts.feed, Number(opts.limit));
-      const msgs = raw.map((r) => formatMessage(r)).filter((m): m is FormattedMessage => m !== null);
+      const msgs = raw
+        .map((r) => formatMessage(r))
+        .filter((m): m is FormattedMessage => m !== null);
 
       if (msgs.length === 0) {
         console.log("No activity items.");
@@ -241,7 +276,9 @@ export function createProgram(): Command {
           console.log(chalk.yellow(`Multiple matches for '${user}':`));
           for (let i = 0; i < results.length; i++) {
             const emails = (results[i].EmailAddresses as string[]) ?? [];
-            console.log(`  ${i + 1}. ${results[i].DisplayName ?? "?"} (${emails[0] ?? ""})`);
+            console.log(
+              `  ${i + 1}. ${results[i].DisplayName ?? "?"} (${emails[0] ?? ""})`,
+            );
           }
           console.log(chalk.green("Using first match."));
         }
@@ -254,7 +291,10 @@ export function createProgram(): Command {
       const chatClient = await getChatClient();
       const convId = await createDmThread(chatClient, myMri, theirMri);
       const result = await sendMessage(chatClient, convId, message);
-      console.log(chalk.green("Sent.") + ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`);
+      console.log(
+        chalk.green("Sent.") +
+          ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+      );
     });
 
   // members
@@ -299,7 +339,11 @@ export function createProgram(): Command {
 async function watchChat(convId: string, interval: number): Promise<void> {
   const client = await getChatClient();
   let { syncUrl } = await pollMessages(client, convId);
-  console.log(chalk.dim(`Watching for new messages (poll every ${interval / 1000}s). Ctrl+C to stop.`));
+  console.log(
+    chalk.dim(
+      `Watching for new messages (poll every ${interval / 1000}s). Ctrl+C to stop.`,
+    ),
+  );
 
   const loop = async () => {
     while (true) {
@@ -328,7 +372,11 @@ async function watchAll(interval: number): Promise<void> {
 
   const client = await getChatClient();
   let { syncUrl } = await pollConversations(client);
-  console.log(chalk.dim(`Watching all chats (poll every ${interval / 1000}s). Ctrl+C to stop.`));
+  console.log(
+    chalk.dim(
+      `Watching all chats (poll every ${interval / 1000}s). Ctrl+C to stop.`,
+    ),
+  );
 
   const loop = async () => {
     while (true) {
@@ -344,7 +392,9 @@ async function watchAll(interval: number): Promise<void> {
         const msg = formatMessage(lastMsg);
         if (!msg) continue;
         const name = chatNames.get(convId) ?? getConversationDisplayName(conv);
-        console.log(`${chalk.cyan(name)} ${chalk.green(msg.time)} ${chalk.bold(msg.sender)}`);
+        console.log(
+          `${chalk.cyan(name)} ${chalk.green(msg.time)} ${chalk.bold(msg.sender)}`,
+        );
         console.log(`  ${msg.body}`);
         console.log();
       }

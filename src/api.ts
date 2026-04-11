@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ApiClient } from "./client.js";
-import { getChatsvcBaseUrl } from "./client.js";
 
 function randomClientMessageId(): string {
   const min = 10n ** 18n;
@@ -22,7 +21,10 @@ export async function listConversations(
   client: ApiClient,
   pageSize = 30,
 ): Promise<Record<string, unknown>[]> {
-  const params = new URLSearchParams({ view: "msnp24Equivalent", pageSize: String(pageSize) });
+  const params = new URLSearchParams({
+    view: "msnp24Equivalent",
+    pageSize: String(pageSize),
+  });
   const resp = await client.fetch(`${client.baseUrl}/conversations?${params}`);
   const data = (await jsonOrThrow(resp)) as Record<string, unknown>;
   return (data.conversations as Record<string, unknown>[]) ?? [];
@@ -33,7 +35,9 @@ export async function getConversation(
   conversationId: string,
 ): Promise<Record<string, unknown>> {
   const params = new URLSearchParams({ view: "msnp24Equivalent" });
-  const resp = await client.fetch(`${client.baseUrl}/conversations/${conversationId}?${params}`);
+  const resp = await client.fetch(
+    `${client.baseUrl}/conversations/${conversationId}?${params}`,
+  );
   return (await jsonOrThrow(resp)) as Record<string, unknown>;
 }
 
@@ -146,7 +150,12 @@ export async function searchPeople(
         ],
         Filter: {
           And: [
-            { Or: [{ Term: { PeopleType: "Person" } }, { Term: { PeopleType: "Other" } }] },
+            {
+              Or: [
+                { Term: { PeopleType: "Person" } },
+                { Term: { PeopleType: "Other" } },
+              ],
+            },
             {
               Or: [
                 { Term: { PeopleSubtype: "OrganizationUser" } },
@@ -174,7 +183,8 @@ export async function searchPeople(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-client-flights": "EnableSelfSuggestion,TeamsHiddenPeopleDirectorySearch",
+        "x-client-flights":
+          "EnableSelfSuggestion,TeamsHiddenPeopleDirectorySearch",
       },
       body: JSON.stringify(body),
     },
@@ -217,10 +227,13 @@ export async function createDmThread(
 
   const location = resp.headers.get("location") ?? "";
   if (location.includes("/threads/")) {
-    return location.split("/threads/").pop()!;
+    return location.split("/threads/").pop() as string;
   }
   // Fallback: construct deterministic ID from sorted UUIDs
-  const uuids = [myMri.replace("8:orgid:", ""), theirMri.replace("8:orgid:", "")].sort();
+  const uuids = [
+    myMri.replace("8:orgid:", ""),
+    theirMri.replace("8:orgid:", ""),
+  ].sort();
   return `19:${uuids[0]}_${uuids[1]}@unq.gbl.spaces`;
 }
 
@@ -306,7 +319,10 @@ export async function searchMessages(
     scenario: {
       Dimensions: [
         { DimensionName: "QueryType", DimensionValue: "Messages" },
-        { DimensionName: "FormFactor", DimensionValue: "general.web.reactSearch" },
+        {
+          DimensionName: "FormFactor",
+          DimensionValue: "general.web.reactSearch",
+        },
       ],
       Name: "powerbar",
     },

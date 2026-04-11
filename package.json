@@ -36,11 +36,11 @@
     "type": "git",
     "url": "git+https://github.com/mingnz/teams-cli.git"
   },
-  "main": "index.js",
+  "main": "dist/index.js",
   "directories": {
     "test": "tests"
   },
-  "author": "",
+  "author": "mingnz",
   "bugs": {
     "url": "https://github.com/mingnz/teams-cli/issues"
   },
@@ -52,6 +52,7 @@
     "playwright": "^1.59.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.11",
     "@types/node": "^25.6.0",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
