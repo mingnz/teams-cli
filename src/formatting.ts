@@ -56,10 +56,13 @@ export function getConversationType(conv: Record<string, unknown>): string {
 }
 
 export function makeShortId(convId: string): string {
-  let body = convId.includes(":")
-    ? convId.split(":").slice(1).join(":")
-    : convId;
-  body = body.includes("@") ? body.split("@")[0] : body;
+  // Strip prefix before first ":" (e.g. "19:" or "8:orgid:")
+  let body = convId;
+  const colonIdx = body.indexOf(":");
+  if (colonIdx !== -1) body = body.slice(colonIdx + 1);
+  // Strip domain suffix after "@"
+  const atIdx = body.indexOf("@");
+  if (atIdx !== -1) body = body.slice(0, atIdx);
   return body;
 }
 
