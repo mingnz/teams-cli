@@ -53,6 +53,7 @@ const IC3_AUDIENCE = TOKEN_AUDIENCES.ic3;
 //   msal.2|{oid}|{authority}|accesstoken|{clientId}|{tid}|{scopes}|
 // Scopes are space-separated URLs. We match the audience as a URL prefix
 // to avoid CodeQL URL-substring warnings.
+/* v8 ignore start -- runs inside browser via page.evaluate, not testable in Node */
 function findMsalToken(
   aud: string,
 ): { secret: string; expires_on: string } | null {
@@ -70,7 +71,10 @@ function findMsalToken(
   return null;
 }
 
+/* v8 ignore stop */
+
 // Poll the page until an access token for the given audience appears in localStorage.
+/* v8 ignore start -- requires live Playwright page */
 async function waitForToken(
   page: {
     evaluate: <T>(fn: (aud: string) => T, arg: string) => Promise<T>;
@@ -105,7 +109,10 @@ async function waitForToken(
   return false;
 }
 
+/* v8 ignore stop */
+
 // Extract all configured tokens from the page's localStorage.
+/* v8 ignore start -- requires live Playwright page */
 async function extractTokens(
   page: { evaluate: <T>(fn: (aud: string) => T, arg: string) => Promise<T> },
   audiences: Record<string, string>,
@@ -119,6 +126,9 @@ async function extractTokens(
   return tokens;
 }
 
+/* v8 ignore stop */
+
+/* v8 ignore start -- requires live Playwright browser */
 async function tryRefresh(): Promise<boolean> {
   let playwright: typeof import("playwright");
   try {
@@ -154,6 +164,7 @@ async function tryRefresh(): Promise<boolean> {
     return false;
   }
 }
+/* v8 ignore stop */
 
 export async function getToken(name: string): Promise<string | null> {
   const tokens = loadTokens();
@@ -201,6 +212,7 @@ export function getRegion(): string {
   return (tokens?.region as string) ?? "amer";
 }
 
+/* v8 ignore start -- interactive browser login, not unit-testable */
 export async function login(): Promise<TokenStore> {
   let playwright: typeof import("playwright");
   try {
@@ -275,3 +287,4 @@ export async function login(): Promise<TokenStore> {
   saveTokens(tokens);
   return tokens;
 }
+/* v8 ignore stop */
