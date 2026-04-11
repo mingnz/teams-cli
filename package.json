@@ -1,6 +1,6 @@
 {
   "name": "teams-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI for Microsoft Teams — list chats, read and send messages, search, and more.",
   "type": "module",
   "bin": {
