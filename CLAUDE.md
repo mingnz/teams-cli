@@ -53,6 +53,7 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages (e.g. `feat:`, `fix:`, `refactor:`, `docs:`, `test:`).
 - PR titles must also follow the Conventional Commits format.
+- **Never commit PII** (names, emails, user IDs, conversation content) to the repo — including in test fixtures, PR descriptions, commit messages, and comments.
 
 ## Maintenance
 
