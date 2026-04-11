@@ -1,5 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { ApiClient } from "../src/client.js";
+import { describe, expect, it, vi } from "vitest";
 import {
   getActivity,
   getMessages,
@@ -7,6 +6,7 @@ import {
   listConversations,
   sendMessage,
 } from "../src/api.js";
+import type { ApiClient } from "../src/client.js";
 
 const BASE = "https://teams.cloud.microsoft/api/chatsvc/amer/v1/users/ME";
 
@@ -14,7 +14,10 @@ vi.mock("../src/client.js", () => ({
   getChatsvcBaseUrl: () => BASE,
 }));
 
-function mockClient(responseBody: unknown, opts?: { headers?: Headers }): ApiClient {
+function mockClient(
+  responseBody: unknown,
+  opts?: { headers?: Headers },
+): ApiClient {
   return {
     baseUrl: BASE,
     fetch: vi.fn().mockResolvedValue({
@@ -49,7 +52,7 @@ describe("sendMessage", () => {
     const result = await sendMessage(client, "19:abc", "hello");
     expect(result.OriginalArrivalTime).toBe("123");
     const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
-    const [url, init] = fetchFn.mock.calls[0];
+    const [_url, init] = fetchFn.mock.calls[0];
     const body = JSON.parse(init.body);
     expect(body.content).toBe("<p>hello</p>");
     expect(body.messagetype).toBe("RichText/Html");

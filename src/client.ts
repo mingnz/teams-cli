@@ -9,13 +9,18 @@ export interface ApiClient {
 async function requireToken(name: string, label: string): Promise<string> {
   const token = await getToken(name);
   if (!token) {
-    console.error(`No valid ${label} token found. Run \`teams login\` to authenticate.`);
+    console.error(
+      `No valid ${label} token found. Run \`teams login\` to authenticate.`,
+    );
     process.exit(1);
   }
   return token;
 }
 
-function createClient(baseUrl: string, headers: Record<string, string>): ApiClient {
+function createClient(
+  baseUrl: string,
+  headers: Record<string, string>,
+): ApiClient {
   const controller = new AbortController();
   const timeout = 30_000;
 

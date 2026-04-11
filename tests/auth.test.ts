@@ -1,6 +1,6 @@
-import { mkdirSync, existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Prevent tryRefresh from launching a real browser
@@ -24,7 +24,13 @@ vi.mock("../src/config.js", () => {
   };
 });
 
-import { loadTokens, saveTokens, getMyMri, getRegion, getToken } from "../src/auth.js";
+import {
+  getMyMri,
+  getRegion,
+  getToken,
+  loadTokens,
+  saveTokens,
+} from "../src/auth.js";
 
 const testDir = join(tmpdir(), "teams-cli-test-auth");
 
@@ -40,7 +46,12 @@ afterEach(() => {
 
 describe("saveTokens / loadTokens", () => {
   it("round trips", () => {
-    const data = { ic3: { secret: "tok123", expires_on: String(Math.floor(Date.now() / 1000) + 3600) } };
+    const data = {
+      ic3: {
+        secret: "tok123",
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
+    };
     saveTokens(data);
     const loaded = loadTokens();
     expect((loaded?.ic3 as { secret: string }).secret).toBe("tok123");
@@ -55,13 +66,19 @@ describe("saveTokens / loadTokens", () => {
 describe("getToken", () => {
   it("returns secret for valid token", async () => {
     saveTokens({
-      ic3: { secret: "mytoken", expires_on: String(Math.floor(Date.now() / 1000) + 3600) },
+      ic3: {
+        secret: "mytoken",
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
     });
     expect(await getToken("ic3")).toBe("mytoken");
   });
   it("returns null for expired token", async () => {
     saveTokens({
-      ic3: { secret: "old", expires_on: String(Math.floor(Date.now() / 1000) - 100) },
+      ic3: {
+        secret: "old",
+        expires_on: String(Math.floor(Date.now() / 1000) - 100),
+      },
     });
     expect(await getToken("ic3")).toBeNull();
   });
@@ -84,11 +101,18 @@ describe("getRegion", () => {
 
 describe("getMyMri", () => {
   it("extracts oid from JWT", () => {
-    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url");
-    const payload = Buffer.from(JSON.stringify({ oid: "test-uuid-123" })).toString("base64url");
+    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
+      "base64url",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({ oid: "test-uuid-123" }),
+    ).toString("base64url");
     const jwt = `${header}.${payload}.signature`;
     saveTokens({
-      ic3: { secret: jwt, expires_on: String(Math.floor(Date.now() / 1000) + 3600) },
+      ic3: {
+        secret: jwt,
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
     });
     expect(getMyMri()).toBe("8:orgid:test-uuid-123");
   });

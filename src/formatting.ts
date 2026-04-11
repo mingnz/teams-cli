@@ -1,5 +1,12 @@
 export function stripHtml(text: string): string {
-  return text.replace(/<[^>]+>/g, "").trim();
+  let result = text;
+  let prev = "";
+  // Repeatedly strip tags until no more remain (handles nested/partial tags)
+  while (result !== prev) {
+    prev = result;
+    result = result.replace(/<[^>]+>/g, "");
+  }
+  return result.trim();
 }
 
 export function formatTimestamp(ts: string | null | undefined): string {
@@ -18,7 +25,9 @@ export function formatTimestamp(ts: string | null | undefined): string {
   }
 }
 
-export function getConversationDisplayName(conv: Record<string, unknown>): string {
+export function getConversationDisplayName(
+  conv: Record<string, unknown>,
+): string {
   const threadProps = (conv.threadProperties as Record<string, string>) ?? {};
   const topic = threadProps.topic ?? "";
   if (topic.trim()) return topic.trim();
@@ -47,7 +56,9 @@ export function getConversationType(conv: Record<string, unknown>): string {
 }
 
 export function makeShortId(convId: string): string {
-  let body = convId.includes(":") ? convId.split(":").slice(1).join(":") : convId;
+  let body = convId.includes(":")
+    ? convId.split(":").slice(1).join(":")
+    : convId;
   body = body.includes("@") ? body.split("@")[0] : body;
   return body;
 }
@@ -75,7 +86,9 @@ export interface FormattedChat {
   id: string;
 }
 
-export function formatChatList(conversations: Record<string, unknown>[]): FormattedChat[] {
+export function formatChatList(
+  conversations: Record<string, unknown>[],
+): FormattedChat[] {
   const results: Record<string, unknown>[] = [];
 
   for (const conv of conversations) {
@@ -115,7 +128,9 @@ export interface FormattedMessage {
   id: string;
 }
 
-export function formatMessage(msg: Record<string, unknown>): FormattedMessage | null {
+export function formatMessage(
+  msg: Record<string, unknown>,
+): FormattedMessage | null {
   const msgType = (msg.messagetype as string) ?? "";
   if (!["RichText/Html", "Text", "RichText"].includes(msgType)) return null;
 
