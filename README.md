@@ -3,6 +3,8 @@
 [![npm](https://img.shields.io/npm/v/teams-cli.svg)](https://www.npmjs.com/package/teams-cli)
 [![Node.js 18+](https://img.shields.io/badge/node-18%2B-blue.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Formatted with Biome](https://img.shields.io/badge/Formatted_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev/)
+[![Linted with Biome](https://img.shields.io/badge/Linted_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev/)
 [![CodeQL](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/mingnz/teams-cli/actions/workflows/github-code-scanning/codeql)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen.svg?logo=dependabot)](https://github.com/mingnz/teams-cli/security)
 
