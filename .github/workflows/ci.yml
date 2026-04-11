@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   build:
@@ -20,4 +21,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npx tsup
-      - run: npx vitest run
+      - run: npx vitest run --coverage.enabled --coverage.reporter=json-summary --coverage.reporter=json
+      - name: Coverage report
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2

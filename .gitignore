@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Coverage
+coverage/
+
 # Teams CLI data (tokens, caches)
 .teams-cli/
 
