@@ -43,6 +43,13 @@ The repository has the following GitHub security features enabled:
 - **Secret scanning** with **push protection** — prevents accidental commits of tokens or credentials
 - **Code scanning** — static analysis via GitHub's CodeQL to detect security issues in code
 
+## Package publishing
+
+- Releases are fully automated via [semantic-release](https://github.com/semantic-release/semantic-release) — version bumps, changelogs, and npm publishing are determined by conventional commit messages, removing human error from the release process
+- npm publishing uses **OIDC trusted publishing** — the GitHub Actions workflow authenticates directly with npm via OpenID Connect, eliminating the need for long-lived npm access tokens
+- Published packages include **provenance attestations**, allowing consumers to verify that a package was built from this repository's CI pipeline and has not been tampered with
+- No npm tokens or publishing credentials are stored as repository secrets
+
 ## Reporting security issues
 
 If you discover a security issue, please open an issue on the [GitHub repository](https://github.com/mingnz/teams-cli/issues) or contact the maintainer directly.
