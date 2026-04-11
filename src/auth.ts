@@ -48,6 +48,77 @@ function isExpired(entry: TokenEntry): boolean {
 // The IC3 audience used for detecting login completion
 const IC3_AUDIENCE = TOKEN_AUDIENCES.ic3;
 
+// Browser-side function to find an MSAL v2 access token by audience.
+// MSAL v2 localStorage keys use "|" as delimiter:
+//   msal.2|{oid}|{authority}|accesstoken|{clientId}|{tid}|{scopes}|
+// Scopes are space-separated URLs. We match the audience as a URL prefix
+// to avoid CodeQL URL-substring warnings.
+function findMsalToken(
+  aud: string,
+): { secret: string; expires_on: string } | null {
+  const prefix = `https://${aud.toLowerCase()}/`;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key === null) continue;
+    const parts = key.split("|");
+    if (parts[3]?.toLowerCase() !== "accesstoken") continue;
+    const scopes = (parts[6] ?? "").split(" ");
+    if (!scopes.some((s) => s.toLowerCase().startsWith(prefix))) continue;
+    const data = JSON.parse(localStorage.getItem(key)!);
+    return { secret: data.secret, expires_on: data.expiresOn };
+  }
+  return null;
+}
+
+// Poll the page until an access token for the given audience appears in localStorage.
+async function waitForToken(
+  page: {
+    evaluate: <T>(fn: (aud: string) => T, arg: string) => Promise<T>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  audience: string,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const found = await page.evaluate((aud: string) => {
+        const prefix = `https://${aud.toLowerCase()}/`;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key === null) continue;
+          const parts = key.split("|");
+          if (parts[3]?.toLowerCase() !== "accesstoken") continue;
+          const scopes = (parts[6] ?? "").split(" ");
+          if (scopes.some((s) => s.toLowerCase().startsWith(prefix)))
+            return true;
+        }
+        return false;
+      }, audience);
+      if (found) return true;
+    } catch {
+      // page may not be ready
+    }
+    await page.waitForTimeout(pollMs);
+  }
+  return false;
+}
+
+// Extract all configured tokens from the page's localStorage.
+async function extractTokens(
+  page: { evaluate: <T>(fn: (aud: string) => T, arg: string) => Promise<T> },
+  audiences: Record<string, string>,
+  existing?: TokenStore,
+): Promise<TokenStore> {
+  const tokens: TokenStore = existing ?? {};
+  for (const [name, audience] of Object.entries(audiences)) {
+    const result = await page.evaluate(findMsalToken, audience);
+    if (result) tokens[name] = result;
+  }
+  return tokens;
+}
+
 async function tryRefresh(): Promise<boolean> {
   let playwright: typeof import("playwright");
   try {
@@ -60,76 +131,22 @@ async function tryRefresh(): Promise<boolean> {
     mkdirSync(BROWSER_PROFILE_DIR, { recursive: true });
     const context = await playwright.chromium.launchPersistentContext(
       BROWSER_PROFILE_DIR,
-      {
-        headless: true,
-      },
+      { headless: true },
     );
     const page = await context.newPage();
     await page.goto(TEAMS_URL);
 
-    // Wait for MSAL to silently acquire tokens (up to 30s)
-    // MSAL v2 localStorage keys use "|" as delimiter:
-    //   msal.2|{oid}|{authority}|accesstoken|{clientId}|{tid}|{scopes}|
-    // Scopes are space-separated URLs. We parse each URL's hostname to
-    // match the audience exactly, avoiding CodeQL URL-substring warnings.
-    const deadline = Date.now() + 30_000;
-    let found = false;
-    while (Date.now() < deadline) {
-      try {
-        found = await page.evaluate((aud: string) => {
-          const target = aud.toLowerCase();
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key !== null) {
-              const parts = key.split("|");
-              if (parts[3]?.toLowerCase() === "accesstoken") {
-                const scopes = (parts[6] ?? "").split(" ");
-                const prefix = `https://${target}/`;
-                if (scopes.some((s) => s.toLowerCase().startsWith(prefix))) {
-                  return true;
-                }
-              }
-            }
-          }
-          return false;
-        }, IC3_AUDIENCE);
-        if (found) break;
-      } catch {
-        // page may not be ready
-      }
-      await page.waitForTimeout(1000);
-    }
-
-    if (!found) {
+    if (!(await waitForToken(page, IC3_AUDIENCE, 30_000, 1000))) {
       await context.close();
       return false;
     }
 
     await page.waitForTimeout(2000);
-
-    const tokens: TokenStore = loadTokens() ?? {};
-    for (const [name, audience] of Object.entries(TOKEN_AUDIENCES)) {
-      const result = await page.evaluate((aud: string) => {
-        const target = aud.toLowerCase();
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key !== null) {
-            const parts = key.split("|");
-            if (parts[3]?.toLowerCase() === "accesstoken") {
-              const scopes = (parts[6] ?? "").split(" ");
-              const prefix = `https://${target}/`;
-              if (scopes.some((s) => s.toLowerCase().startsWith(prefix))) {
-                const data = JSON.parse(localStorage.getItem(key)!);
-                return { secret: data.secret, expires_on: data.expiresOn };
-              }
-            }
-          }
-        }
-        return null;
-      }, audience);
-      if (result) tokens[name] = result;
-    }
-
+    const tokens = await extractTokens(
+      page,
+      TOKEN_AUDIENCES,
+      loadTokens() ?? {},
+    );
     await context.close();
     saveTokens(tokens);
     return true;
@@ -211,39 +228,7 @@ export async function login(): Promise<TokenStore> {
   console.log('When prompted "Stay signed in?", click Yes.');
   console.log("Waiting for login to complete (timeout: 5 minutes)...");
 
-  // MSAL v2 localStorage keys use "|" as delimiter:
-  //   msal.2|{oid}|{authority}|accesstoken|{clientId}|{tid}|{scopes}|
-  // Scopes are space-separated URLs. We parse each URL's hostname to
-  // match the audience exactly, avoiding CodeQL URL-substring warnings.
-  const deadline = Date.now() + 300_000;
-  let found = false;
-  while (Date.now() < deadline) {
-    try {
-      found = await page.evaluate((aud: string) => {
-        const target = aud.toLowerCase();
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key !== null) {
-            const parts = key.split("|");
-            if (parts[3]?.toLowerCase() === "accesstoken") {
-              const scopes = (parts[6] ?? "").split(" ");
-              const prefix = `https://${target}/`;
-              if (scopes.some((s) => s.toLowerCase().startsWith(prefix))) {
-                return true;
-              }
-            }
-          }
-        }
-        return false;
-      }, IC3_AUDIENCE);
-      if (found) break;
-    } catch {
-      // page may not be ready
-    }
-    await page.waitForTimeout(2000);
-  }
-
-  if (!found) {
+  if (!(await waitForToken(page, IC3_AUDIENCE, 300_000, 2000))) {
     await context.close();
     throw new Error("Login timed out after 5 minutes.");
   }
@@ -252,27 +237,7 @@ export async function login(): Promise<TokenStore> {
   await page.waitForTimeout(8000);
   console.log("Login detected! Extracting tokens...");
 
-  for (const [name, audience] of Object.entries(TOKEN_AUDIENCES)) {
-    const result = await page.evaluate((aud: string) => {
-      const target = aud.toLowerCase();
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key !== null) {
-          const parts = key.split("|");
-          if (parts[3]?.toLowerCase() === "accesstoken") {
-            const scopes = (parts[6] ?? "").split(" ");
-            const prefix = `https://${target}/`;
-            if (scopes.some((s) => s.toLowerCase().startsWith(prefix))) {
-              const data = JSON.parse(localStorage.getItem(key)!);
-              return { secret: data.secret, expires_on: data.expiresOn };
-            }
-          }
-        }
-      }
-      return null;
-    }, audience);
-    if (result) tokens[name] = result;
-  }
+  await extractTokens(page, TOKEN_AUDIENCES, tokens);
 
   const regionData = await page.evaluate((pattern: string) => {
     for (let i = 0; i < localStorage.length; i++) {

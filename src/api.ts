@@ -9,11 +9,15 @@ function randomClientMessageId(): string {
   return (min + rand).toString();
 }
 
-async function jsonOrThrow(resp: Response): Promise<unknown> {
+async function assertOk(resp: Response): Promise<void> {
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
     throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
   }
+}
+
+async function jsonOrThrow(resp: Response): Promise<unknown> {
+  await assertOk(resp);
   return resp.json();
 }
 
@@ -114,10 +118,7 @@ export async function markAsRead(
       body: JSON.stringify({ consumptionhorizon: horizon }),
     },
   );
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
+  await assertOk(resp);
 }
 
 export async function searchPeople(
@@ -220,10 +221,7 @@ export async function createDmThread(
       },
     }),
   });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
+  await assertOk(resp);
 
   const location = resp.headers.get("location") ?? "";
   if (location.includes("/threads/")) {
