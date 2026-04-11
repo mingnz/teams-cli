@@ -29,6 +29,7 @@ import {
   getRegion,
   getToken,
   loadTokens,
+  logout,
   saveTokens,
 } from "../src/auth.js";
 
@@ -119,5 +120,63 @@ describe("getMyMri", () => {
   it("returns null when no tokens", () => {
     if (existsSync(testDir)) rmSync(testDir, { recursive: true });
     expect(getMyMri()).toBeNull();
+  });
+
+  it("returns null for malformed JWT (not 3 parts)", () => {
+    saveTokens({
+      ic3: {
+        secret: "not-a-jwt",
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
+    });
+    expect(getMyMri()).toBeNull();
+  });
+
+  it("returns null when JWT has no oid claim", () => {
+    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
+      "base64url",
+    );
+    const payload = Buffer.from(
+      JSON.stringify({ sub: "no-oid-here" }),
+    ).toString("base64url");
+    const jwt = `${header}.${payload}.signature`;
+    saveTokens({
+      ic3: {
+        secret: jwt,
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
+    });
+    expect(getMyMri()).toBeNull();
+  });
+
+  it("returns null when ic3 entry has no secret", () => {
+    saveTokens({
+      ic3: {
+        secret: "",
+        expires_on: String(Math.floor(Date.now() / 1000) + 3600),
+      },
+    });
+    expect(getMyMri()).toBeNull();
+  });
+
+  it("returns null when ic3 is a string (not TokenEntry)", () => {
+    saveTokens({
+      ic3: "just-a-string",
+    } as unknown as import("../src/auth.js").TokenStore);
+    expect(getMyMri()).toBeNull();
+  });
+});
+
+describe("logout", () => {
+  it("removes tokens file", () => {
+    saveTokens({ ic3: { secret: "x", expires_on: "9999999999" } });
+    expect(loadTokens()).not.toBeNull();
+    logout();
+    expect(loadTokens()).toBeNull();
+  });
+
+  it("does not throw when nothing to remove", () => {
+    if (existsSync(testDir)) rmSync(testDir, { recursive: true });
+    expect(() => logout()).not.toThrow();
   });
 });

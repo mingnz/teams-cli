@@ -3,6 +3,7 @@ import {
   formatChatList,
   formatMember,
   formatMessage,
+  formatPerson,
   formatTimestamp,
   getConversationDisplayName,
   getConversationType,
@@ -188,5 +189,74 @@ describe("formatMember", () => {
   it("falls back to mri for name", () => {
     const result = formatMember({ id: "8:orgid:xyz", role: "User" });
     expect(result.name).toBe("8:orgid:xyz");
+  });
+  it("classifies unknown prefix as Other", () => {
+    const result = formatMember({
+      id: "99:unknown",
+      friendlyName: "Mystery",
+      role: "User",
+    });
+    expect(result.type).toBe("Other");
+  });
+});
+
+describe("formatPerson", () => {
+  it("extracts all fields", () => {
+    const result = formatPerson({
+      DisplayName: "Jane Doe",
+      EmailAddresses: ["jane@example.com", "jd@alt.com"],
+      MRI: "8:orgid:jane-uuid",
+      JobTitle: "Engineer",
+      Department: "R&D",
+      CompanyName: "Acme",
+      PeopleSubtype: "OrganizationUser",
+    });
+    expect(result.name).toBe("Jane Doe");
+    expect(result.email).toBe("jane@example.com");
+    expect(result.mri).toBe("8:orgid:jane-uuid");
+    expect(result.title).toBe("Engineer");
+    expect(result.department).toBe("R&D");
+    expect(result.company).toBe("Acme");
+    expect(result.type).toBe("OrganizationUser");
+  });
+
+  it("handles missing fields", () => {
+    const result = formatPerson({});
+    expect(result.name).toBe("");
+    expect(result.email).toBe("");
+    expect(result.mri).toBe("");
+  });
+});
+
+describe("formatChatList edge cases", () => {
+  it("shows preview without sender name", () => {
+    const conv = {
+      id: "19:xyz@thread.v2",
+      threadProperties: {},
+      lastMessage: { content: "<p>System notification</p>" },
+    };
+    const result = formatChatList([conv]);
+    expect(result[0].preview).toBe("System notification");
+  });
+
+  it("resolves short ID collisions by increasing length", () => {
+    // Two conversations whose IDs differ only in early characters
+    // but share the same last 4 characters
+    const convs = [
+      { id: "19:aaaa1234@thread.v2", threadProperties: {}, lastMessage: {} },
+      { id: "19:bbbb1234@thread.v2", threadProperties: {}, lastMessage: {} },
+    ];
+    const result = formatChatList(convs);
+    const ids = result.map((r) => r.short_id);
+    // Must be unique despite sharing last 4 chars
+    expect(new Set(ids).size).toBe(2);
+    // IDs should be longer than 4 to resolve collision
+    expect(ids[0].length).toBeGreaterThan(4);
+  });
+});
+
+describe("formatTimestamp edge cases", () => {
+  it("truncates short invalid dates", () => {
+    expect(formatTimestamp("bad")).toBe("bad");
   });
 });
