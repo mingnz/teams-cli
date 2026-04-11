@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import Table from "cli-table3";
 import { Command } from "commander";
@@ -58,6 +60,17 @@ function printMessages(msgs: FormattedMessage[]): void {
   }
 }
 
+function getVersion(): string {
+  try {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const pkgPath = resolve(__dirname, "..", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version;
+  } catch {
+    return "0.0.0";
+  }
+}
+
 export function createProgram(): Command {
   const program = new Command();
   program
@@ -65,7 +78,7 @@ export function createProgram(): Command {
     .description(
       "CLI for Microsoft Teams - list chats, read and send messages, search, and more.",
     )
-    .version("0.1.0");
+    .version(getVersion());
 
   // login
   program
