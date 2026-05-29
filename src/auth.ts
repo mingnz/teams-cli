@@ -198,11 +198,13 @@ async function tryRefresh(): Promise<boolean> {
 }
 /* v8 ignore stop */
 
-// SharePoint never stores its access token in localStorage — the Stream player
-// holds it in memory and only sends it on the wire. So to get a token for a host
-// we don't have, open the recording in the persistent (already-signed-in) browser
-// profile and intercept the Bearer token off the player's `/_api/` request, the
-// same call the web client makes. `warmupUrl` is the recording's share link.
+// SharePoint never stores its access token in localStorage — the SPA holds it in
+// memory and only sends it on the wire. So to get a token for a host we don't
+// have, drive the persistent (already-signed-in) browser profile to that host and
+// intercept the Bearer token off an `/_api/` request. Visiting the host root
+// first bootstraps the SharePoint session via SSO (the login redirect that the
+// Teams-only login never triggers); the OneDrive/site SPA then makes an
+// authenticated `/_api/` call. The recording link is used as a fallback warmup.
 /* v8 ignore start -- requires live Playwright browser */
 async function acquireSharepointToken(
   host: string,
@@ -226,7 +228,7 @@ async function acquireSharepointToken(
 
     const wantHost = host.toLowerCase();
     const captured = new Promise<string | null>((resolve) => {
-      const timer = setTimeout(() => resolve(null), 30_000);
+      const timer = setTimeout(() => resolve(null), 45_000);
       page.on("request", (req) => {
         const url = req.url();
         if (!/\/_api\//i.test(url)) return;
@@ -235,19 +237,27 @@ async function acquireSharepointToken(
         } catch {
           return;
         }
-        const auth = req.headers().authorization;
-        const match = auth?.match(/^Bearer\s+(.+)$/i);
-        if (match) {
+        const token = req
+          .headers()
+          .authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+        // Ignore non-JWT placeholders (some calls send a tiny dummy header).
+        if (token && token.length > 100) {
           clearTimeout(timer);
-          resolve(match[1]);
+          resolve(token);
         }
       });
     });
 
+    // Bootstrap the SharePoint session at the host root (triggers the SSO login
+    // redirect); if no token shows up shortly, fall back to the recording page.
     await page
-      .goto(warmupUrl, { waitUntil: "domcontentloaded" })
+      .goto(`https://${host}/`, { waitUntil: "domcontentloaded" })
       .catch(() => {});
+    const fallback = setTimeout(() => {
+      page.goto(warmupUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+    }, 15_000);
     const secret = await captured;
+    clearTimeout(fallback);
     await context.close();
 
     if (!secret) return false;

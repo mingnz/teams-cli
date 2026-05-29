@@ -37,7 +37,7 @@ Handles token persistence, automatic refresh, and the Playwright login flow.
 
 - `saveTokens()` / `loadTokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
 - `getToken()` — check token expiry, attempt silent refresh if expired, and retrieve by name
-- `getSharepointToken(host, recordingUrl)` — returns a cached SharePoint token for `host`, or acquires one via `acquireSharepointToken()` (opens the recording headlessly and intercepts the `Bearer` token off the Stream player's `/_api/` request, caching it with the JWT's `exp`)
+- `getSharepointToken(host, recordingUrl)` — returns a cached SharePoint token for `host`, or acquires one via `acquireSharepointToken()` (drives the headless profile to the host root to bootstrap a SharePoint session via SSO, intercepts the `Bearer` token off an `/_api/` request, and caches it with the JWT's `exp`; the recording link is a fallback warmup)
 - `getRegion()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
 - `getMyMri()` — extracts the current user's MRI (`8:orgid:{oid}`) by decoding the `oid` claim from the ic3 JWT token using `Buffer.from(payload, 'base64url')`. Used by the `dm` command to construct thread creation requests.
 - `tryRefresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `true` on success, `false` if the session itself has expired.
@@ -145,7 +145,7 @@ Where Teams stores meeting recordings and their transcripts. Used to download tr
 - Token audience: the SharePoint host itself; cached per host as `tokens.sharepoint[host]`
 - Used by: `recordings` (lists recordings from the meeting chat — chatsvc only), `transcript` (resolves the recording file and downloads its transcript)
 - Endpoints: `GET /_api/v2.0/shares/u!{base64url(fileUrl)}/driveItem` (resolve file → drive item) and `GET /_api/v2.1/drives/{driveId}/items/{itemId}?$expand=media/transcripts` (drive item → transcript download URL)
-- Token acquisition: SharePoint tokens are **not** in localStorage (the Stream player keeps them in memory). `acquireSharepointToken()` opens the recording's share link headlessly in the persistent browser profile and intercepts the `Bearer` token off the player's `/_api/` request, then caches it. The first transcript download for a host therefore launches a short headless browser session.
+- Token acquisition: SharePoint tokens are **not** in localStorage (the SPA keeps them in memory). `acquireSharepointToken()` headlessly navigates the persistent profile to the host root (bootstrapping a SharePoint session via SSO, since the Teams login never visits SharePoint), then intercepts the `Bearer` token off the resulting `/_api/` request and caches it. The first transcript download for a host therefore launches a short headless browser session.
 
 ## Testing strategy
 
