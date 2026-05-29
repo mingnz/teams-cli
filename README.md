@@ -101,10 +101,13 @@ teams transcript a1b2 --output -                # print to stdout
 
 > **Transcripts** are fetched from SharePoint/Stream (where Teams stores meeting
 > recordings). The first `transcript` download for a given SharePoint host briefly
-> opens the recording in a headless browser (using your saved login) to obtain a
-> SharePoint token, then caches it for reuse. You need access to the recording for
-> this to work. Very old recordings whose share links have been cleaned up may
-> return a "sharing link could not be found" error.
+> opens a headless browser (using your saved login) to obtain a SharePoint token,
+> then caches it for reuse. Limitations:
+> - Only recordings in **your own (home) tenant** can be downloaded — meetings you
+>   joined as an external guest are hosted in another org's SharePoint and can't
+>   get a token ("Could not obtain a SharePoint token for …").
+> - Very old recordings whose share links were cleaned up return "sharing link
+>   could not be found".
 
 ### Options
 

@@ -102,7 +102,12 @@ teams transcript <chat_id> --output -            # Print to stdout instead of a 
 ```
 `recordings` lists each recording with an index, name, and date. `transcript` downloads the transcript for the recording at that index (default `0`). Formats: `vtt` (default), `grouped` (plain text, one paragraph per speaker), `json` (raw MS Stream JSON). Saves to a file named after the recording unless `-o`/`--output` is given (`-` for stdout).
 
-Transcripts come from SharePoint/Stream. The first download for a given SharePoint host briefly opens the recording in a headless browser (using the saved login) to obtain a token, then caches it — so the first `transcript` call may take a few extra seconds. If it reports it could not obtain a SharePoint token, the user may not have access to that recording; ensure they can open it in Teams. Very old recordings can fail with "sharing link could not be found" if their share links were cleaned up.
+Transcripts come from SharePoint/Stream. The first download for a given SharePoint host briefly opens a headless browser (using the saved login) to obtain a token, then caches it — so the first `transcript` call may take a few extra seconds.
+
+Known limitations to set expectations with the user:
+- **Only works for recordings in the user's own (home) tenant.** Recordings hosted by another organisation — i.e. meetings the user joined as an external guest — cannot get a token (silent sign-on only works for the home tenant). These fail with "Could not obtain a SharePoint token for `<host>`". The host in the error reveals the owning tenant (e.g. `<theirorg>-my.sharepoint.com`); if it isn't the user's own org, the recording is cross-tenant and isn't downloadable this way.
+- **Old recordings whose share links were cleaned up** fail with "sharing link could not be found" (HTTP 404), even though they still appear in `recordings`.
+- If token acquisition fails for a recording that *is* in the user's tenant, make sure they can open that recording in Teams, then retry (or re-run `teams login`).
 
 ## Typical workflows
 
