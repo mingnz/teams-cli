@@ -13,6 +13,8 @@ description: >
 
 You have access to a `teams` CLI tool that talks to Microsoft Teams.
 
+> **Note:** This is an unofficial, community-built tool. It is **not** the "official Teams CLI" (no such product exists) and is **not** affiliated with, endorsed by, or associated with Microsoft. It works by calling the same internal HTTP APIs the Teams web client uses.
+
 ## Setup
 
 Before using any commands, check if the CLI is installed and the user is authenticated:
