@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createDmThread,
+  downloadTranscriptJson,
   getActivity,
   getConversation,
   getMessages,
   getThreadMembers,
+  getTranscriptMetadata,
   listConversations,
   markAsRead,
   pollConversations,
   pollMessages,
+  resolveDriveItem,
   searchMessages,
   searchPeople,
   sendMessage,
@@ -303,5 +306,86 @@ describe("searchMessages", () => {
     expect(url).toContain("/searchservice/api/v2/query");
     const body = JSON.parse(init.body);
     expect(body.entityRequests[0].query.queryString).toBe("test query");
+  });
+});
+
+describe("resolveDriveItem", () => {
+  it("encodes the file URL as a share token and extracts ids", async () => {
+    const client = mockClient({
+      id: "ITEM123",
+      parentReference: { driveId: "DRIVE456" },
+    });
+    const fileUrl = "https://contoso-my.sharepoint.com/personal/u/clip.mp4";
+    const result = await resolveDriveItem(client, fileUrl);
+    expect(result).toEqual({ driveId: "DRIVE456", itemId: "ITEM123" });
+
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    const [url] = fetchFn.mock.calls[0];
+    const expectedShare = `u!${Buffer.from(fileUrl).toString("base64url")}`;
+    expect(url).toBe(`/_api/v2.0/shares/${expectedShare}/driveItem`);
+  });
+
+  it("throws when ids are missing", async () => {
+    const client = mockClient({});
+    await expect(
+      resolveDriveItem(client, "https://x.sharepoint.com/a"),
+    ).rejects.toThrow();
+  });
+});
+
+describe("getTranscriptMetadata", () => {
+  it("reads the expanded media.transcripts shape", async () => {
+    const client = mockClient({
+      media: { transcripts: [{ temporaryDownloadUrl: "https://dl/1" }] },
+    });
+    const meta = await getTranscriptMetadata(client, "d", "i");
+    expect(meta?.temporaryDownloadUrl).toBe("https://dl/1");
+
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    const [url] = fetchFn.mock.calls[0];
+    expect(url).toContain("/_api/v2.1/drives/d/items/i");
+    expect(url).toContain("transcripts");
+  });
+
+  it("reads the value collection shape and prefers isDefault", async () => {
+    const client = mockClient({
+      value: [
+        { temporaryDownloadUrl: "https://dl/a" },
+        { temporaryDownloadUrl: "https://dl/b", isDefault: true },
+      ],
+    });
+    const meta = await getTranscriptMetadata(client, "d", "i");
+    expect(meta?.temporaryDownloadUrl).toBe("https://dl/b");
+  });
+
+  it("reads the single-object shape", async () => {
+    const client = mockClient({ temporaryDownloadUrl: "https://dl/solo" });
+    const meta = await getTranscriptMetadata(client, "d", "i");
+    expect(meta?.temporaryDownloadUrl).toBe("https://dl/solo");
+  });
+
+  it("returns null when no transcript exists", async () => {
+    const client = mockClient({ media: { transcripts: [] } });
+    const meta = await getTranscriptMetadata(client, "d", "i");
+    expect(meta).toBeNull();
+  });
+});
+
+describe("downloadTranscriptJson", () => {
+  it("appends format=json and returns the body text", async () => {
+    const client = mockClient({ entries: [] });
+    const text = await downloadTranscriptJson(client, "https://dl/x?token=1");
+    expect(JSON.parse(text)).toEqual({ entries: [] });
+
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    const [url] = fetchFn.mock.calls[0];
+    expect(url).toBe("https://dl/x?token=1&format=json");
+  });
+
+  it("uses '?' when the url has no query string", async () => {
+    const client = mockClient({ entries: [] });
+    await downloadTranscriptJson(client, "https://dl/y");
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    expect(fetchFn.mock.calls[0][0]).toBe("https://dl/y?format=json");
   });
 });

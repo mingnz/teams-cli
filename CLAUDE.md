@@ -25,13 +25,14 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 - **auth.ts** — Token persistence (`~/.teams-cli/tokens.json`) and Playwright-based browser login flow that extracts tokens from localStorage.
 - **config.ts** — Constants only, no imports from other project modules.
 
-### Three API surfaces
+### API surfaces
 
 | API | Token name | Base URL pattern |
 |-----|-----------|-----------------|
 | Chat Service (chatsvc) | `ic3` | `teams.cloud.microsoft/api/chatsvc/{region}/v1/users/ME` |
 | Substrate Search | `search` | `substrate.office.com` |
 | Presence | `presence` | `teams.cloud.microsoft/ups/{region}/v1` |
+| SharePoint Stream (transcripts) | `sharepoint[host]` | `https://{host}.sharepoint.com` |
 
 ### Key design details
 
@@ -48,6 +49,12 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 - Expired tokens are automatically refreshed via headless Playwright before each command — no user interaction unless the session itself has expired
 - Playwright is dynamically imported at runtime (`await import("playwright")`) so it's not required at install time
 - Native `fetch` is used for all HTTP calls (no external HTTP library needed with Node 18+)
+- **Meeting transcripts** (`recordings`/`transcript` commands) use the SharePoint Stream API, not Graph:
+  - `parseRecordings()` (formatting.ts) scans a meeting chat's messages for embedded SharePoint URLs (`.mp4` or `stream.aspx?id=`), normalizing Stream playback links to the underlying file path and deriving the host from the URL
+  - `resolveDriveItem()` turns a file URL into `{driveId, itemId}` via `GET /_api/v2.0/shares/u!{base64url(url)}/driveItem`
+  - `getTranscriptMetadata()` calls `GET /_api/v2.1/drives/{driveId}/items/{itemId}?$expand=media/transcripts` and tolerates three response shapes (`media.transcripts[]`, `value[]`, single object), returning the `temporaryDownloadUrl`
+  - `downloadTranscriptJson()` fetches that URL with `?format=json`; `convertTranscriptToVtt()`/`convertTranscriptToGrouped()` turn the JSON `entries[]` into WebVTT or speaker-grouped text
+- SharePoint tokens are **audience-scoped per host** and, unlike ic3/search/presence, are **not stored in localStorage** — the SPA holds them in memory and only sends them on the wire. So `acquireSharepointToken(host, recordingUrl)` drives the persistent (signed-in) browser profile headlessly and **intercepts the `Bearer` token off an `/_api/` request**. It navigates to the **host root first** (`https://{host}/`) — the Teams-only login never visits SharePoint, so this is what triggers the SSO login redirect that establishes a SharePoint session; the OneDrive/site SPA then makes an authenticated `/_api/` call. The recording link is only a fallback warmup (and some links 404). The token is cached in `tokens.sharepoint[host]` (with `expires_on` from the JWT `exp`) and reused until expiry. Tokens shorter than ~100 chars are ignored (some requests carry a tiny placeholder auth header)
 
 ## Conventions
 

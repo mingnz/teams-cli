@@ -13,6 +13,8 @@ description: >
 
 You have access to a `teams` CLI tool that talks to Microsoft Teams.
 
+> **Note:** This is an unofficial, community-built tool. It is **not** the "official Teams CLI" (no such product exists) and is **not** affiliated with, endorsed by, or associated with Microsoft. It works by calling the same internal HTTP APIs the Teams web client uses.
+
 ## Setup
 
 Before using any commands, check if the CLI is installed and the user is authenticated:
@@ -89,6 +91,23 @@ teams watch                        # Watch all chats
 teams watch <chat_id> -i 5         # Poll every 5 seconds
 ```
 Polls for new messages in real-time. Runs until interrupted with Ctrl+C. Because this blocks the terminal, use it with a timeout or run it in the background when you need to monitor briefly.
+
+### Meeting recordings and transcripts
+```bash
+teams recordings <chat_id>                       # List recordings shared in a meeting chat
+teams transcript <chat_id>                       # Download first recording's transcript (WebVTT)
+teams transcript <chat_id> 1 --format grouped    # 2nd recording, readable speaker-grouped text
+teams transcript <chat_id> --format json -o t.json
+teams transcript <chat_id> --output -            # Print to stdout instead of a file
+```
+`recordings` lists each recording with an index, name, and date. `transcript` downloads the transcript for the recording at that index (default `0`). Formats: `vtt` (default), `grouped` (plain text, one paragraph per speaker), `json` (raw MS Stream JSON). Saves to a file named after the recording unless `-o`/`--output` is given (`-` for stdout).
+
+Transcripts come from SharePoint/Stream. The first download for a given SharePoint host briefly opens a headless browser (using the saved login) to obtain a token, then caches it — so the first `transcript` call may take a few extra seconds.
+
+Known limitations to set expectations with the user:
+- **Only works for recordings in the user's own (home) tenant.** Recordings hosted by another organisation — i.e. meetings the user joined as an external guest — cannot get a token (silent sign-on only works for the home tenant). These fail with "Could not obtain a SharePoint token for `<host>`". The host in the error reveals the owning tenant (e.g. `<theirorg>-my.sharepoint.com`); if it isn't the user's own org, the recording is cross-tenant and isn't downloadable this way.
+- **Old recordings whose share links were cleaned up** fail with "sharing link could not be found" (HTTP 404), even though they still appear in `recordings`.
+- If token acquisition fails for a recording that *is* in the user's tenant, make sure they can open that recording in Teams, then retry (or re-run `teams login`).
 
 ## Typical workflows
 
