@@ -1,4 +1,4 @@
-import { getRegion, getToken } from "./auth.js";
+import { getRegion, getSharepointToken, getToken } from "./auth.js";
 import { CLIENT_INFO } from "./config.js";
 
 export interface ApiClient {
@@ -64,6 +64,28 @@ export async function getSearchClient(): Promise<ApiClient> {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
     "x-client-version": "T2.1",
+  });
+}
+
+// Client for the SharePoint/Stream API that hosts meeting recordings and
+// transcripts. The bearer token is audience-scoped per host, so the host must
+// be supplied (derived from the recording's file URL). `recordingUrl` is the
+// recording's share link, opened headlessly to intercept a token if we lack one.
+export async function getStreamClient(
+  host: string,
+  recordingUrl: string,
+): Promise<ApiClient> {
+  const token = await getSharepointToken(host, recordingUrl);
+  if (!token) {
+    console.error(
+      `Could not obtain a SharePoint token for ${host}.\n` +
+        "Make sure you can open the recording in Teams, then try again (or re-run `teams login`).",
+    );
+    process.exit(1);
+  }
+  return createClient(`https://${host}`, {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
   });
 }
 

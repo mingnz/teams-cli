@@ -88,7 +88,23 @@ teams activity --feed calllogs
 
 # List members of a chat
 teams members a1b2
+
+# List meeting recordings shared in a chat
+teams recordings a1b2
+
+# Download a recording's transcript (defaults to the first recording, WebVTT)
+teams transcript a1b2
+teams transcript a1b2 1 --format grouped       # 2nd recording, speaker-grouped text
+teams transcript a1b2 --format json -o out.json
+teams transcript a1b2 --output -                # print to stdout
 ```
+
+> **Transcripts** are fetched from SharePoint/Stream (where Teams stores meeting
+> recordings). The first `transcript` download for a given SharePoint host briefly
+> opens the recording in a headless browser (using your saved login) to obtain a
+> SharePoint token, then caches it for reuse. You need access to the recording for
+> this to work. Very old recordings whose share links have been cleaned up may
+> return a "sharing link could not be found" error.
 
 ### Options
 

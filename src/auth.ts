@@ -20,8 +20,10 @@ export interface TokenEntry {
 }
 
 export interface TokenStore {
-  [key: string]: TokenEntry | string | undefined;
+  [key: string]: TokenEntry | string | Record<string, TokenEntry> | undefined;
   region?: string;
+  // SharePoint/Stream tokens, keyed by host (e.g. "contoso-my.sharepoint.com").
+  sharepoint?: Record<string, TokenEntry>;
 }
 
 export function logout(): void {
@@ -43,6 +45,14 @@ export function loadTokens(): TokenStore | null {
 function isExpired(entry: TokenEntry): boolean {
   const expiresOn = entry.expires_on ?? 0;
   return Date.now() / 1000 > Number(expiresOn);
+}
+
+// A token store value is a single token (vs. a string like `region` or the
+// `sharepoint` host map) when it has a `secret` field.
+function isTokenEntry(
+  value: TokenEntry | string | Record<string, TokenEntry> | undefined,
+): value is TokenEntry {
+  return typeof value === "object" && value !== null && "secret" in value;
 }
 
 // The IC3 audience used for detecting login completion
@@ -128,6 +138,28 @@ async function extractTokens(
 
 /* v8 ignore stop */
 
+// Read the `exp` claim (epoch seconds) from a JWT, for the token store's
+// `expires_on`. Falls back to ~1h from now if the token can't be decoded.
+function jwtExpiry(secret: string): number {
+  try {
+    const payload = secret.split(".")[1];
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    const claims = JSON.parse(Buffer.from(padded, "base64url").toString());
+    if (typeof claims.exp === "number") return claims.exp;
+  } catch {
+    // not a decodable JWT
+  }
+  return Math.floor(Date.now() / 1000) + 3600;
+}
+
+function saveSharepointToken(host: string, secret: string): void {
+  const tokens = loadTokens() ?? {};
+  const map: Record<string, TokenEntry> = { ...(tokens.sharepoint ?? {}) };
+  map[host.toLowerCase()] = { secret, expires_on: jwtExpiry(secret) };
+  tokens.sharepoint = map;
+  saveTokens(tokens);
+}
+
 /* v8 ignore start -- requires live Playwright browser */
 async function tryRefresh(): Promise<boolean> {
   let playwright: typeof import("playwright");
@@ -166,20 +198,77 @@ async function tryRefresh(): Promise<boolean> {
 }
 /* v8 ignore stop */
 
+// SharePoint never stores its access token in localStorage — the Stream player
+// holds it in memory and only sends it on the wire. So to get a token for a host
+// we don't have, open the recording in the persistent (already-signed-in) browser
+// profile and intercept the Bearer token off the player's `/_api/` request, the
+// same call the web client makes. `warmupUrl` is the recording's share link.
+/* v8 ignore start -- requires live Playwright browser */
+async function acquireSharepointToken(
+  host: string,
+  warmupUrl: string,
+): Promise<boolean> {
+  let playwright: typeof import("playwright");
+  try {
+    playwright = await import("playwright");
+  } catch {
+    return false;
+  }
+
+  let context: import("playwright").BrowserContext | undefined;
+  try {
+    mkdirSync(BROWSER_PROFILE_DIR, { recursive: true });
+    context = await playwright.chromium.launchPersistentContext(
+      BROWSER_PROFILE_DIR,
+      { headless: true },
+    );
+    const page = await context.newPage();
+
+    const wantHost = host.toLowerCase();
+    const captured = new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), 30_000);
+      page.on("request", (req) => {
+        const url = req.url();
+        if (!/\/_api\//i.test(url)) return;
+        try {
+          if (new URL(url).host.toLowerCase() !== wantHost) return;
+        } catch {
+          return;
+        }
+        const auth = req.headers().authorization;
+        const match = auth?.match(/^Bearer\s+(.+)$/i);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[1]);
+        }
+      });
+    });
+
+    await page
+      .goto(warmupUrl, { waitUntil: "domcontentloaded" })
+      .catch(() => {});
+    const secret = await captured;
+    await context.close();
+
+    if (!secret) return false;
+    saveSharepointToken(host, secret);
+    return true;
+  } catch {
+    await context?.close().catch(() => {});
+    return false;
+  }
+}
+/* v8 ignore stop */
+
 export async function getToken(name: string): Promise<string | null> {
   const tokens = loadTokens();
   if (!tokens) return null;
   const entry = tokens[name];
-  if (!entry || typeof entry === "string") return null;
+  if (!isTokenEntry(entry)) return null;
   if (isExpired(entry)) {
     if (await tryRefresh()) {
-      const refreshed = loadTokens();
-      const refreshedEntry = refreshed?.[name];
-      if (
-        refreshedEntry &&
-        typeof refreshedEntry !== "string" &&
-        !isExpired(refreshedEntry)
-      ) {
+      const refreshedEntry = loadTokens()?.[name];
+      if (isTokenEntry(refreshedEntry) && !isExpired(refreshedEntry)) {
         return refreshedEntry.secret;
       }
     }
@@ -188,11 +277,35 @@ export async function getToken(name: string): Promise<string | null> {
   return entry.secret;
 }
 
+// Look up a SharePoint token for a specific host, refreshing if expired.
+function readSharepointEntry(host: string): TokenEntry | null {
+  const tokens = loadTokens();
+  const map = tokens?.sharepoint;
+  if (!map) return null;
+  const entry = map[host.toLowerCase()];
+  return entry ?? null;
+}
+
+export async function getSharepointToken(
+  host: string,
+  warmupUrl: string,
+): Promise<string | null> {
+  let entry = readSharepointEntry(host);
+  if (entry && !isExpired(entry)) return entry.secret;
+
+  // Missing or expired: open the recording to intercept a fresh token, re-read.
+  if (await acquireSharepointToken(host, warmupUrl)) {
+    entry = readSharepointEntry(host);
+    if (entry && !isExpired(entry)) return entry.secret;
+  }
+  return null;
+}
+
 export function getMyMri(): string | null {
   const tokens = loadTokens();
   if (!tokens) return null;
   const entry = tokens.ic3;
-  if (!entry || typeof entry === "string") return null;
+  if (!isTokenEntry(entry)) return null;
   const secret = entry.secret;
   if (!secret) return null;
   try {

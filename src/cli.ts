@@ -6,20 +6,29 @@ import Table from "cli-table3";
 import { Command } from "commander";
 import {
   createDmThread,
+  downloadTranscriptJson,
   getActivity,
   getMessages,
   getThreadMembers,
+  getTranscriptMetadata,
   listConversations,
   pollConversations,
   pollMessages,
+  resolveDriveItem,
   searchMessages,
   searchPeople,
   sendMessage,
 } from "./api.js";
 import { getMyMri, login, logout } from "./auth.js";
-import { getChatClient, getSearchClient } from "./client.js";
-import { DATA_DIR, LAST_CHATS_FILE } from "./config.js";
+import { getChatClient, getSearchClient, getStreamClient } from "./client.js";
 import {
+  DATA_DIR,
+  DEFAULT_TRANSCRIPT_FORMAT,
+  LAST_CHATS_FILE,
+} from "./config.js";
+import {
+  convertTranscriptToGrouped,
+  convertTranscriptToVtt,
   type FormattedChat,
   type FormattedMessage,
   formatChatList,
@@ -27,7 +36,9 @@ import {
   formatMessage,
   formatPerson,
   getConversationDisplayName,
+  parseRecordings,
   stripHtml,
+  transcriptFilename,
 } from "./formatting.js";
 
 function saveChatIndex(chats: FormattedChat[]): void {
@@ -328,6 +339,109 @@ export function createProgram(): Command {
         table.push([m.name, m.role, m.type]);
       }
       console.log(table.toString());
+    });
+
+  // recordings
+  program
+    .command("recordings <chat>")
+    .description("List meeting recordings shared in a conversation.")
+    .option("-n, --limit <number>", "Number of messages to scan", "100")
+    .action(async (chat: string, opts) => {
+      const convId = resolveConversationId(chat);
+      const client = await getChatClient();
+      const messages = await getMessages(client, convId, Number(opts.limit));
+      const recordings = parseRecordings(messages);
+
+      if (recordings.length === 0) {
+        console.log("No recordings found in this conversation.");
+        return;
+      }
+
+      const table = new Table({
+        head: ["#", "Name", "Date"],
+        style: { head: ["cyan"] },
+      });
+      for (let i = 0; i < recordings.length; i++) {
+        const r = recordings[i];
+        table.push([String(i), r.name, r.date]);
+      }
+      console.log(table.toString());
+      console.log(
+        chalk.dim(
+          "\nDownload with: teams transcript <chat> [#] [--format vtt|grouped|json]",
+        ),
+      );
+    });
+
+  // transcript
+  program
+    .command("transcript <chat> [index]")
+    .description("Download a meeting recording's transcript.")
+    .option(
+      "-f, --format <format>",
+      "Output format: vtt, grouped, or json",
+      DEFAULT_TRANSCRIPT_FORMAT,
+    )
+    .option("-o, --output <path>", "Output file ('-' for stdout)")
+    .action(async (chat: string, index: string | undefined, opts) => {
+      const format = String(opts.format).toLowerCase();
+      if (!["vtt", "grouped", "json"].includes(format)) {
+        console.error(`Invalid format '${format}'. Use vtt, grouped, or json.`);
+        process.exit(1);
+      }
+
+      const convId = resolveConversationId(chat);
+      const chatClient = await getChatClient();
+      const messages = await getMessages(chatClient, convId, 100);
+      const recordings = parseRecordings(messages);
+
+      if (recordings.length === 0) {
+        console.error(
+          "No recordings found. Run `teams recordings <chat>` to check.",
+        );
+        process.exit(1);
+      }
+
+      const idx = index ? Number(index) : 0;
+      const recording = recordings[idx];
+      if (!recording) {
+        console.error(
+          `No recording at index ${idx}. There are ${recordings.length}.`,
+        );
+        process.exit(1);
+      }
+
+      const stream = await getStreamClient(recording.host, recording.fileUrl);
+      const { driveId, itemId } = await resolveDriveItem(
+        stream,
+        recording.fileUrl,
+      );
+      const meta = await getTranscriptMetadata(stream, driveId, itemId);
+      if (!meta) {
+        console.error("This recording has no transcript available.");
+        process.exit(1);
+      }
+
+      const json = await downloadTranscriptJson(
+        stream,
+        meta.temporaryDownloadUrl,
+      );
+      const output =
+        format === "vtt"
+          ? convertTranscriptToVtt(json)
+          : format === "grouped"
+            ? convertTranscriptToGrouped(json)
+            : json;
+
+      if (opts.output === "-") {
+        console.log(output);
+        return;
+      }
+      const outPath = resolve(
+        opts.output ?? transcriptFilename(recording.name, format),
+      );
+      writeFileSync(outPath, output);
+      console.log(`${chalk.green("Saved transcript:")} ${outPath}`);
     });
 
   // watch

@@ -282,6 +282,84 @@ export async function pollConversations(
   return { conversations, syncUrl: metadata.syncState ?? "" };
 }
 
+export interface DriveItemRef {
+  driveId: string;
+  itemId: string;
+}
+
+// Resolve a SharePoint/OneDrive file URL to its drive + item IDs via the shares
+// API. The sharing token is "u!" + unpadded base64url of the file URL.
+export async function resolveDriveItem(
+  stream: ApiClient,
+  fileUrl: string,
+): Promise<DriveItemRef> {
+  const share = `u!${Buffer.from(fileUrl).toString("base64url")}`;
+  const resp = await stream.fetch(`/_api/v2.0/shares/${share}/driveItem`);
+  const data = (await jsonOrThrow(resp)) as Record<string, unknown>;
+  const parent = (data.parentReference as Record<string, unknown>) ?? {};
+  const driveId = (parent.driveId as string) ?? "";
+  const itemId = (data.id as string) ?? "";
+  if (!driveId || !itemId) {
+    throw new Error("Could not resolve recording file to a drive item.");
+  }
+  return { driveId, itemId };
+}
+
+export interface TranscriptMeta {
+  temporaryDownloadUrl: string;
+  displayName?: string;
+  languageTag?: string;
+}
+
+// Fetch transcript metadata for a recording's drive item. SharePoint Stream
+// returns it in a few shapes (expanded media object, a value collection, or a
+// single object); we tolerate all three. Returns null when no transcript exists.
+export async function getTranscriptMetadata(
+  stream: ApiClient,
+  driveId: string,
+  itemId: string,
+): Promise<TranscriptMeta | null> {
+  const params = new URLSearchParams({
+    select: "media/transcripts",
+    $expand: "media/transcripts",
+  });
+  const resp = await stream.fetch(
+    `/_api/v2.1/drives/${driveId}/items/${itemId}?${params}`,
+  );
+  const data = (await jsonOrThrow(resp)) as Record<string, unknown>;
+
+  const media = (data.media as Record<string, unknown>) ?? {};
+  const fromMedia = media.transcripts as Record<string, unknown>[] | undefined;
+  const fromValue = data.value as Record<string, unknown>[] | undefined;
+
+  let transcript: Record<string, unknown> | undefined;
+  if (Array.isArray(fromMedia) && fromMedia.length > 0) {
+    transcript = fromMedia[0];
+  } else if (Array.isArray(fromValue) && fromValue.length > 0) {
+    transcript = fromValue.find((t) => t.isDefault) ?? fromValue[0];
+  } else if (data.temporaryDownloadUrl) {
+    transcript = data;
+  }
+
+  if (!transcript?.temporaryDownloadUrl) return null;
+  return {
+    temporaryDownloadUrl: transcript.temporaryDownloadUrl as string,
+    displayName: transcript.displayName as string | undefined,
+    languageTag: transcript.languageTag as string | undefined,
+  };
+}
+
+// Download the raw transcript JSON from a temporary download URL.
+export async function downloadTranscriptJson(
+  stream: ApiClient,
+  temporaryDownloadUrl: string,
+): Promise<string> {
+  const sep = temporaryDownloadUrl.includes("?") ? "&" : "?";
+  const resp = await stream.fetch(`${temporaryDownloadUrl}${sep}format=json`);
+  await assertOk(resp);
+  return resp.text();
+}
+
 export async function searchMessages(
   client: ApiClient,
   query: string,

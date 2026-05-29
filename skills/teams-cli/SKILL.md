@@ -90,6 +90,18 @@ teams watch <chat_id> -i 5         # Poll every 5 seconds
 ```
 Polls for new messages in real-time. Runs until interrupted with Ctrl+C. Because this blocks the terminal, use it with a timeout or run it in the background when you need to monitor briefly.
 
+### Meeting recordings and transcripts
+```bash
+teams recordings <chat_id>                       # List recordings shared in a meeting chat
+teams transcript <chat_id>                       # Download first recording's transcript (WebVTT)
+teams transcript <chat_id> 1 --format grouped    # 2nd recording, readable speaker-grouped text
+teams transcript <chat_id> --format json -o t.json
+teams transcript <chat_id> --output -            # Print to stdout instead of a file
+```
+`recordings` lists each recording with an index, name, and date. `transcript` downloads the transcript for the recording at that index (default `0`). Formats: `vtt` (default), `grouped` (plain text, one paragraph per speaker), `json` (raw MS Stream JSON). Saves to a file named after the recording unless `-o`/`--output` is given (`-` for stdout).
+
+Transcripts come from SharePoint/Stream. The first download for a given SharePoint host briefly opens the recording in a headless browser (using the saved login) to obtain a token, then caches it — so the first `transcript` call may take a few extra seconds. If it reports it could not obtain a SharePoint token, the user may not have access to that recording; ensure they can open it in Teams. Very old recordings can fail with "sharing link could not be found" if their share links were cleaned up.
+
 ## Typical workflows
 
 ### "Check my Teams messages"

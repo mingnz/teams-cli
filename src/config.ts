@@ -24,5 +24,6 @@ export const CLIENT_INFO =
 export const DEFAULT_CHAT_PAGE_SIZE = 30;
 export const DEFAULT_MESSAGE_PAGE_SIZE = 20;
 export const DEFAULT_SEARCH_SIZE = 25;
+export const DEFAULT_TRANSCRIPT_FORMAT = "vtt";
 
 export const TEAMS_URL = "https://teams.cloud.microsoft/";

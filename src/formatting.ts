@@ -172,6 +172,162 @@ export function formatPerson(person: Record<string, unknown>): FormattedPerson {
   };
 }
 
+export interface RecordingRef {
+  name: string;
+  date: string;
+  fileUrl: string;
+  host: string;
+}
+
+function matchAttr(xml: string, re: RegExp): string {
+  return (xml.match(re)?.[1] ?? "").replace(/&amp;/g, "&").trim();
+}
+
+// Derive a human name for a recording from its URIObject, preferring the
+// original filename, then the meeting title, then the file in the URL.
+function recordingName(xml: string, fileUrl: string): string {
+  const original = matchAttr(xml, /<OriginalName\s+v="([^"]*)"/i);
+  if (original) return original;
+  const title = matchAttr(xml, /<Title>([^<]*)<\/Title>/i);
+  if (title) return title;
+  try {
+    const last = decodeURIComponent(
+      new URL(fileUrl).pathname.split("/").pop() ?? "",
+    );
+    return last || "Recording";
+  } catch {
+    return "Recording";
+  }
+}
+
+// Extract meeting recordings from a list of chat messages. Recordings arrive as
+// `RichText/Media_CallRecording` messages whose content is a `<URIObject>` with
+// a SharePoint sharing link. The recording goes through several states; only the
+// finished one carries a usable link, so empty hrefs are skipped. The sharing
+// URL is kept verbatim — it is what the shares API resolves to a drive item.
+// De-duplicated by URL.
+export function parseRecordings(
+  messages: Record<string, unknown>[],
+): RecordingRef[] {
+  const seen = new Set<string>();
+  const results: RecordingRef[] = [];
+
+  for (const msg of messages) {
+    if (msg.messagetype !== "RichText/Media_CallRecording") continue;
+    const xml = (msg.content as string) ?? "";
+
+    const fileUrl = matchAttr(xml, /<a\s+href="([^"]*)"/i);
+    if (!fileUrl || !/sharepoint\.com/i.test(fileUrl)) continue;
+    if (seen.has(fileUrl)) continue;
+    seen.add(fileUrl);
+
+    let host = "";
+    try {
+      host = new URL(fileUrl).host;
+    } catch {
+      continue;
+    }
+
+    results.push({
+      name: recordingName(xml, fileUrl),
+      date: formatTimestamp(msg.originalarrivaltime as string),
+      fileUrl,
+      host,
+    });
+  }
+
+  return results;
+}
+
+interface TranscriptEntry {
+  id?: string | number;
+  startOffset?: string;
+  endOffset?: string;
+  speakerDisplayName?: string;
+  text?: string;
+}
+
+function parseTranscript(jsonText: string): TranscriptEntry[] {
+  const data = JSON.parse(jsonText) as { entries?: TranscriptEntry[] };
+  return data.entries ?? [];
+}
+
+// "HH:MM:SS(.fff)" -> seconds (rounded to ms).
+export function timeToSeconds(t: string): number {
+  const [h, m, s] = t.split(":");
+  return (
+    Math.round(
+      (Number(h) * 3600 + Number(m) * 60 + Number.parseFloat(s)) * 1000,
+    ) / 1000
+  );
+}
+
+// seconds -> "HH:MM:SS.fff" (WebVTT cue timestamp).
+export function secondsToVtt(seconds: number): string {
+  const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const s = (seconds % 60).toFixed(3).padStart(6, "0");
+  return `${h}:${m}:${s}`;
+}
+
+// Convert the MS Stream transcript JSON to WebVTT with <v Speaker> voice tags.
+export function convertTranscriptToVtt(jsonText: string): string {
+  const entries = parseTranscript(jsonText);
+  let vtt = "WEBVTT\n\n";
+  entries.forEach((entry, index) => {
+    const start = secondsToVtt(timeToSeconds(entry.startOffset ?? "00:00:00"));
+    const end = secondsToVtt(timeToSeconds(entry.endOffset ?? "00:00:00"));
+    const speaker = entry.speakerDisplayName || "Unknown";
+    const text = entry.text ?? "";
+    vtt += `${entry.id ?? index + 1}\n`;
+    vtt += `${start} --> ${end}\n`;
+    vtt += `<v ${speaker}>${text}\n\n`;
+  });
+  return vtt;
+}
+
+// Convert the transcript JSON to readable text, merging consecutive lines from
+// the same speaker into one paragraph.
+export function convertTranscriptToGrouped(jsonText: string): string {
+  const entries = parseTranscript(jsonText);
+  const grouped: string[] = [];
+  let currentSpeaker: string | null = null;
+  let buffer = "";
+
+  for (const entry of entries) {
+    const speaker = entry.speakerDisplayName || "Unknown";
+    const text = entry.text ?? "";
+    if (speaker !== currentSpeaker) {
+      if (buffer) grouped.push(`${currentSpeaker}: ${buffer.trim()}`);
+      currentSpeaker = speaker;
+      buffer = text;
+    } else {
+      buffer += ` ${text}`;
+    }
+  }
+  if (buffer && currentSpeaker)
+    grouped.push(`${currentSpeaker}: ${buffer.trim()}`);
+
+  return grouped.join("\n\n");
+}
+
+const TRANSCRIPT_EXTENSIONS: Record<string, string> = {
+  json: ".json",
+  vtt: ".vtt",
+  grouped: ".txt",
+};
+
+// Build a safe default output filename for a downloaded transcript.
+export function transcriptFilename(name: string, format: string): string {
+  const base = (name || "recording")
+    .replace(/\.[^.]+$/, "") // drop extension (e.g. .mp4)
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const suffix = format === "grouped" ? "_transcript_grouped" : "_transcript";
+  const ext = TRANSCRIPT_EXTENSIONS[format] ?? ".txt";
+  return `${base || "recording"}${suffix}${ext}`;
+}
+
 export interface FormattedMember {
   name: string;
   role: string;

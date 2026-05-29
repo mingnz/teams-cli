@@ -37,6 +37,7 @@ Handles token persistence, automatic refresh, and the Playwright login flow.
 
 - `saveTokens()` / `loadTokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
 - `getToken()` — check token expiry, attempt silent refresh if expired, and retrieve by name
+- `getSharepointToken(host, recordingUrl)` — returns a cached SharePoint token for `host`, or acquires one via `acquireSharepointToken()` (opens the recording headlessly and intercepts the `Bearer` token off the Stream player's `/_api/` request, caching it with the JWT's `exp`)
 - `getRegion()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
 - `getMyMri()` — extracts the current user's MRI (`8:orgid:{oid}`) by decoding the `oid` claim from the ic3 JWT token using `Buffer.from(payload, 'base64url')`. Used by the `dm` command to construct thread creation requests.
 - `tryRefresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `true` on success, `false` if the session itself has expired.
@@ -59,6 +60,9 @@ Factory functions that create `ApiClient` instances — thin wrappers around nat
 | `getChatClient()` | Chat Service (chatsvc) | `ic3` | (per-request, includes region) |
 | `getSearchClient()` | Substrate Search | `search` | `substrate.office.com` |
 | `getPresenceClient()` | Presence | `presence` | `teams.cloud.microsoft/ups/{region}/v1` |
+| `getStreamClient(host)` | SharePoint Stream | `sharepoint[host]` | `https://{host}` |
+
+`getStreamClient(host)` is the one factory that takes an argument: SharePoint tokens are scoped per host, so the host (derived from a recording's file URL) selects which token to use and forms the base URL.
 
 All clients use `AbortSignal.timeout(30000)` for request timeouts. If the required token is missing or expired, the client factory prints an error and exits.
 
@@ -74,6 +78,7 @@ Key design decisions:
 - `createDmThread()` creates (or retrieves) a 1:1 chat thread via `POST /threads` with `uniquerosterthread: true`, which makes it idempotent — it returns the existing thread if one already exists
 - `pollMessages()` and `pollConversations()` implement delta sync polling. The first call (with no `syncUrl`) sends `startTime=now` to establish a sync anchor and returns no messages. Subsequent calls pass the `syncState` URL from the previous response and get only new items. Returns `{ messages/conversations, syncUrl }`.
 - `getActivity()` is a thin wrapper around `getMessages()` that targets the system conversations (`48:notifications`, `48:mentions`, `48:calllogs`)
+- Transcript download is a three-step SharePoint Stream chain: `resolveDriveItem()` (file URL → `{driveId, itemId}` via the `/_api/v2.0/shares` endpoint), `getTranscriptMetadata()` (drive item → `temporaryDownloadUrl` via `/_api/v2.1/.../?$expand=media/transcripts`), and `downloadTranscriptJson()` (fetch the URL with `?format=json`)
 
 ### formatting.ts
 
@@ -87,6 +92,8 @@ Pure functions that transform API response dicts into display-ready objects with
 - `formatMessage()` — returns `null` for non-displayable messages (system events, call notifications), keeping the filtering logic out of `cli.ts`
 - `formatPerson()` — formats a people search result with name, email, MRI, title, department, and company
 - `formatMember()` — determines member type from MRI prefix (`8:orgid:` = User, `28:` = Bot)
+- `parseRecordings()` — scans chat messages for embedded SharePoint recording URLs, normalizing Stream `stream.aspx?id=` playback links to the underlying file path and deriving the host
+- `convertTranscriptToVtt()` / `convertTranscriptToGrouped()` — turn the MS Stream transcript JSON (`entries[]` with `startOffset`/`endOffset`/`speakerDisplayName`/`text`) into WebVTT (with `<v Speaker>` voice tags) or merged speaker-grouped text; `transcriptFilename()` builds a safe default output name
 
 ### cli.ts
 
@@ -104,7 +111,7 @@ The `watch` command uses an async poll loop, creating a fresh `ApiClient` per it
 
 ## API surfaces
 
-The CLI talks to three separate Microsoft APIs, each requiring its own auth token:
+The CLI talks to four separate Microsoft APIs, each requiring its own auth token:
 
 ### Chat Service API (chatsvc)
 
@@ -129,6 +136,16 @@ User presence/status information.
 - Base URL: `https://teams.cloud.microsoft/ups/{region}/v1`
 - Token audience: `presence.teams.microsoft.com`
 - Not yet exposed as a CLI command
+
+### SharePoint Stream API
+
+Where Teams stores meeting recordings and their transcripts. Used to download transcripts without going through Microsoft Graph.
+
+- Base URL: `https://{host}.sharepoint.com` (host varies — often the user's `{tenant}-my.sharepoint.com` OneDrive)
+- Token audience: the SharePoint host itself; cached per host as `tokens.sharepoint[host]`
+- Used by: `recordings` (lists recordings from the meeting chat — chatsvc only), `transcript` (resolves the recording file and downloads its transcript)
+- Endpoints: `GET /_api/v2.0/shares/u!{base64url(fileUrl)}/driveItem` (resolve file → drive item) and `GET /_api/v2.1/drives/{driveId}/items/{itemId}?$expand=media/transcripts` (drive item → transcript download URL)
+- Token acquisition: SharePoint tokens are **not** in localStorage (the Stream player keeps them in memory). `acquireSharepointToken()` opens the recording's share link headlessly in the persistent browser profile and intercepts the `Bearer` token off the player's `/_api/` request, then caches it. The first transcript download for a host therefore launches a short headless browser session.
 
 ## Testing strategy
 
