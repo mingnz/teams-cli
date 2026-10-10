@@ -36,6 +36,7 @@ import {
   formatMessage,
   formatPerson,
   getConversationDisplayName,
+  makeShortId,
   parseRecordings,
   stripHtml,
   transcriptFilename,
@@ -51,12 +52,43 @@ function loadChatIndex(): FormattedChat[] {
   return JSON.parse(readFileSync(LAST_CHATS_FILE, "utf-8"));
 }
 
-function resolveConversationId(idOrShort: string): string {
+export function resolveConversationId(
+  idOrShort: string,
+  chats: FormattedChat[] = loadChatIndex(),
+): string {
+  // Full conversation IDs (e.g. "19:...@thread.v2") pass through untouched.
   if (idOrShort.includes(":")) return idOrShort;
-  const chats = loadChatIndex();
-  for (const c of chats) {
-    if (c.short_id === idOrShort) return c.id;
+
+  // Exact short-id hit. The chat index can hold several rows for the same
+  // thread (the conversations API returns duplicate rows), so dedupe by
+  // full ID before deciding.
+  const exactIds = new Set(
+    chats.filter((c) => c.short_id === idOrShort).map((c) => c.id),
+  );
+  if (exactIds.size === 1) return [...exactIds][0];
+
+  // Suffix fallback: `chats` re-derives short IDs on every run, so a short
+  // ID captured earlier may no longer be assigned. Any unique tail (>= 4
+  // characters, the same minimum `chats` uses) of the short ID or of the
+  // conversation ID body still resolves.
+  if (idOrShort.length >= 4) {
+    const suffixIds = new Set(
+      chats
+        .filter(
+          (c) =>
+            c.short_id.endsWith(idOrShort) ||
+            makeShortId(c.id).endsWith(idOrShort),
+        )
+        .map((c) => c.id),
+    );
+    if (suffixIds.size === 1) return [...suffixIds][0];
+    if (suffixIds.size > 1) {
+      console.error(`ID '${idOrShort}' matches multiple conversations:`);
+      for (const id of suffixIds) console.error(`  ${id}`);
+      process.exit(1);
+    }
   }
+
   console.error(
     `Short ID '${idOrShort}' not found. Run \`teams chats\` first.`,
   );
