@@ -19,7 +19,7 @@ import {
   searchPeople,
   sendMessage,
 } from "./api.js";
-import { getMyMri, login, logout } from "./auth.js";
+import { getMyMri, getToken, login, logout } from "./auth.js";
 import { getChatClient, getSearchClient, getStreamClient } from "./client.js";
 import {
   DATA_DIR,
@@ -29,6 +29,10 @@ import {
 import {
   convertTranscriptToGrouped,
   convertTranscriptToVtt,
+  extractFile,
+  extractImage,
+  extractMedia,
+  type FileInfo,
   type FormattedChat,
   type FormattedMessage,
   formatChatList,
@@ -36,6 +40,7 @@ import {
   formatMessage,
   formatPerson,
   getConversationDisplayName,
+  type MediaInfo,
   parseRecordings,
   stripHtml,
   transcriptFilename,
@@ -164,6 +169,118 @@ export function createProgram(): Command {
         return;
       }
       printMessages(msgs.reverse());
+    });
+
+  // media
+  program
+    .command("media <chat> [id]")
+    .description(
+      "Download a voice note / media / image message (default: newest media message).",
+    )
+    .option("-o, --out <file>", "Output file")
+    .action(async (chat: string, id: string | undefined, opts) => {
+      const convId = resolveConversationId(chat);
+      const client = await getChatClient();
+      const raw = await getMessages(client, convId, 60);
+      let target: { msg: Record<string, unknown>; media: MediaInfo } | null =
+        null;
+      for (const m of raw) {
+        const media = extractMedia(m) ?? extractImage(m);
+        if (!media) continue;
+        if (id && m.id !== id) continue;
+        target = { msg: m, media };
+        break;
+      }
+      if (!target || (id && target.msg.id !== id)) {
+        console.error(
+          id ? `No media message with id ${id}.` : "No media messages found.",
+        );
+        process.exit(1);
+      }
+      const token = await getToken("ic3");
+      if (!token) {
+        console.error(
+          "No valid Teams chat token found. Run `teams login` to authenticate.",
+        );
+        process.exit(1);
+      }
+      const resp = await fetch(target.media.url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        console.error(`Download failed: HTTP ${resp.status}`);
+        process.exit(1);
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      const ct = resp.headers.get("content-type") ?? "";
+      const ext = ct.includes("webm")
+        ? "webm"
+        : ct.includes("jpeg") || ct.includes("jpg")
+          ? "jpg"
+          : ct.includes("png")
+            ? "png"
+            : "mp4";
+      const out = opts.out || `teams-media-${target.msg.id}.${ext}`;
+      writeFileSync(out, buf);
+      console.log(
+        `Saved ${out} (${buf.length} bytes, ${target.media.duration}).`,
+      );
+    });
+
+  // file
+  program
+    .command("file <chat> [match]")
+    .description(
+      "Download a file attachment (match = file-name substring or message id; default: newest file).",
+    )
+    .option("-o, --out <file>", "Output file")
+    .action(async (chat: string, match: string | undefined, opts) => {
+      const convId = resolveConversationId(chat);
+      const client = await getChatClient();
+      const raw = await getMessages(client, convId, 60);
+      let target: { msg: Record<string, unknown>; file: FileInfo } | null =
+        null;
+      for (const m of raw) {
+        const file = extractFile(m);
+        if (!file) continue;
+        if (
+          match &&
+          !(
+            m.id === match ||
+            String(file.fileName)
+              .toLowerCase()
+              .includes(String(match).toLowerCase())
+          )
+        )
+          continue;
+        target = { msg: m, file };
+        break;
+      }
+      if (!target) {
+        console.error(
+          match ? `No file matching '${match}'.` : "No file messages found.",
+        );
+        process.exit(1);
+      }
+      console.log(`File: ${target.file.fileName}`);
+      if (!target.file.url) {
+        console.error("No download URL on this message.");
+        process.exit(1);
+      }
+      // tempauth links are pre-authed; they expire shortly after the message
+      // is sent - a 403 means the sender has to re-share the file.
+      const resp = await fetch(target.file.url, { redirect: "follow" });
+      if (!resp.ok) {
+        console.error(
+          `Download failed: HTTP ${resp.status}${resp.status === 403 ? " (tempauth link likely EXPIRED - ask the sender to re-send the file)" : ""}`,
+        );
+        process.exit(1);
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      const safe = String(target.file.fileName).replace(/[/\\?%*:|"<>]/g, "_");
+      const out = opts.out || safe;
+      writeFileSync(out, buf);
+      console.log(`Saved ${out} (${buf.length} bytes).`);
     });
 
   // send

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   convertTranscriptToGrouped,
   convertTranscriptToVtt,
+  extractFile,
+  extractImage,
+  extractMedia,
   formatChatList,
   formatMember,
   formatMessage,
@@ -404,5 +407,172 @@ describe("transcriptFilename", () => {
   });
   it("falls back when the name is empty", () => {
     expect(transcriptFilename("", "vtt")).toBe("recording_transcript.vtt");
+  });
+});
+
+describe("extractMedia", () => {
+  it("extracts a voice note url and duration from cards", () => {
+    const msg = {
+      messagetype: "RichText/Html",
+      content: "",
+      properties: {
+        cards: JSON.stringify([
+          {
+            content: {
+              contentType: "audio",
+              duration: "PT12S",
+              media: [{ url: "https://example.objects/views/audio" }],
+            },
+          },
+        ]),
+      },
+    };
+    const media = extractMedia(msg);
+    expect(media).not.toBeNull();
+    expect(media?.url).toBe("https://example.objects/views/audio");
+    expect(media?.duration).toBe("12s");
+    expect(media?.kind).toBe("voice note");
+  });
+  it("handles multi-minute durations", () => {
+    const msg = {
+      properties: {
+        cards: JSON.stringify([
+          {
+            content: {
+              contentType: "audio",
+              duration: "PT1M05S",
+              media: [{ url: "u" }],
+            },
+          },
+        ]),
+      },
+    };
+    expect(extractMedia(msg)?.duration).toBe("1m05s");
+  });
+  it("returns null for messages without cards", () => {
+    expect(extractMedia({ properties: {} })).toBeNull();
+    expect(extractMedia({})).toBeNull();
+  });
+});
+
+describe("extractImage", () => {
+  it("extracts the object url from an img tag", () => {
+    const msg = {
+      content:
+        '<div><img src="https://eu.example.com/v1/objects/0-abc/views/imgo" width="800"></div>',
+    };
+    const img = extractImage(msg);
+    expect(img).not.toBeNull();
+    expect(img?.url).toBe("https://eu.example.com/v1/objects/0-abc/views/imgo");
+    expect(img?.kind).toBe("image");
+    expect(img?.duration).toBe("800w");
+  });
+  it("decodes entity-escaped urls", () => {
+    const msg = {
+      content: '<img src="https://x/v1/objects/1-a&amp;b/views/imgo">',
+    };
+    expect(extractImage(msg)?.url).toBe(
+      "https://x/v1/objects/1-a&b/views/imgo",
+    );
+  });
+  it("returns null for non-object img srcs", () => {
+    expect(
+      extractImage({ content: '<img src="https://x/avatar.png">' }),
+    ).toBeNull();
+    expect(extractImage({ content: "no image" })).toBeNull();
+  });
+});
+
+describe("extractFile", () => {
+  it("extracts file name and tempauth url", () => {
+    const msg = {
+      properties: {
+        files: JSON.stringify([
+          {
+            fileName: "report.pdf",
+            objectUrl: "https://sharepoint/doc",
+            botFileProperties: { url: "https://tempauth/report.pdf" },
+          },
+        ]),
+      },
+    };
+    const file = extractFile(msg);
+    expect(file?.fileName).toBe("report.pdf");
+    expect(file?.url).toBe("https://tempauth/report.pdf");
+    expect(file?.objectUrl).toBe("https://sharepoint/doc");
+  });
+  it("falls back to objectUrl without botFileProperties", () => {
+    const msg = {
+      properties: {
+        files: JSON.stringify([
+          { fileName: "a.txt", objectUrl: "https://sp/a" },
+        ]),
+      },
+    };
+    expect(extractFile(msg)?.url).toBe("https://sp/a");
+  });
+  it("returns null for messages without files", () => {
+    expect(extractFile({ properties: {} })).toBeNull();
+  });
+});
+
+describe("formatMessage media rows", () => {
+  it("renders a voice note marker instead of dropping the message", () => {
+    const msg = {
+      messagetype: "RichText/Html",
+      imdisplayname: "Osama",
+      id: "1791627568451",
+      content: "",
+      properties: {
+        cards: JSON.stringify([
+          {
+            content: {
+              contentType: "audio",
+              duration: "PT28S",
+              media: [{ url: "u" }],
+            },
+          },
+        ]),
+      },
+    };
+    const m = formatMessage(msg);
+    expect(m?.body).toBe("[voice note 28s \u2014 media id 1791627568451]");
+  });
+  it("renders an image marker for image-only messages", () => {
+    const msg = {
+      messagetype: "RichText/Html",
+      imdisplayname: "Osama",
+      id: "1791629797097",
+      content:
+        '<div><img src="https://eu.example.com/v1/objects/0-abc/views/imgo"></div>',
+    };
+    const m = formatMessage(msg);
+    expect(m?.body).toBe("[image ? \u2014 img id 1791629797097]");
+  });
+  it("appends the image marker to captioned images", () => {
+    const msg = {
+      messagetype: "RichText/Html",
+      imdisplayname: "X",
+      id: "7",
+      content:
+        '<p>look at this</p><img src="https://eu.example.com/v1/objects/0-d/views/imgo" width="640">',
+    };
+    const m = formatMessage(msg);
+    expect(m?.body).toBe("look at this [image 640w \u2014 img id 7]");
+  });
+  it("renders a file marker for file-only messages", () => {
+    const msg = {
+      messagetype: "RichText/Html",
+      imdisplayname: "X",
+      id: "9",
+      content: "",
+      properties: {
+        files: JSON.stringify([
+          { fileName: "spec.docx", objectUrl: "https://sp" },
+        ]),
+      },
+    };
+    const m = formatMessage(msg);
+    expect(m?.body).toBe("[file: spec.docx \u2014 file id 9]");
   });
 });

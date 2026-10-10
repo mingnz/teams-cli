@@ -131,6 +131,82 @@ export interface FormattedMessage {
   id: string;
 }
 
+export interface MediaInfo {
+  url: string;
+  duration: string;
+  kind: string;
+}
+
+// Voice notes and other card-based media: the playable URL and duration live
+// in the message's `properties.cards` JSON payload.
+export function extractMedia(msg: Record<string, unknown>): MediaInfo | null {
+  try {
+    const props = (msg.properties as Record<string, string>) ?? {};
+    const cards = props.cards ? JSON.parse(props.cards) : [];
+    for (const c of cards as Record<string, unknown>[]) {
+      const content = c?.content as Record<string, unknown> | undefined;
+      const media = content?.media as Record<string, string>[] | undefined;
+      if (Array.isArray(media) && media[0]?.url) {
+        const dm = String(content?.duration ?? "").match(/PT(?:(\d+)M)?(\d+)S/);
+        const dur = dm ? `${dm[1] ? `${dm[1]}m` : ""}${dm[2] ?? "?"}s` : "?";
+        const kind = String(content?.contentType ?? "").includes("audio")
+          ? "voice note"
+          : "media";
+        return { url: media[0].url, duration: dur, kind };
+      }
+    }
+  } catch {
+    // malformed cards JSON - not a media message
+  }
+  return null;
+}
+
+// Inline images: the downloadable object URL sits in the raw HTML `<img src>`
+// of the message content (e.g. .../v1/objects/<ref>/views/imgo).
+export function extractImage(msg: Record<string, unknown>): MediaInfo | null {
+  try {
+    const html = (msg.content as string) ?? "";
+    const m = html.match(/<img[^>]+src="(https:\/\/[^"]+\/objects\/[^"]+)"/i);
+    if (!m) return null;
+    const url = m[1].replace(/&amp;/g, "&");
+    const dim = html.match(/<img[^>]+width="(\d+)"/i);
+    return { url, duration: dim ? `${dim[1]}w` : "?", kind: "image" };
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+export interface FileInfo {
+  fileName: string;
+  objectUrl: string;
+  url: string;
+}
+
+// File attachments: `properties.files` carries the name plus a pre-authed
+// tempauth download URL (botFileProperties.url) with the SharePoint objectUrl
+// as fallback.
+export function extractFile(msg: Record<string, unknown>): FileInfo | null {
+  try {
+    const props = (msg.properties as Record<string, string>) ?? {};
+    const files = props.files ? JSON.parse(props.files) : [];
+    for (const f of files as Record<string, unknown>[]) {
+      if (f?.fileName) {
+        const bot = f?.botFileProperties as Record<string, string> | undefined;
+        const objectUrl = (f.objectUrl as string) ?? "";
+        return {
+          fileName: f.fileName as string,
+          objectUrl,
+          url: bot?.url ?? objectUrl,
+        };
+      }
+    }
+  } catch {
+    // malformed files JSON - not a file message
+  }
+  return null;
+}
+
 export function formatMessage(
   msg: Record<string, unknown>,
 ): FormattedMessage | null {
@@ -138,14 +214,50 @@ export function formatMessage(
   if (!["RichText/Html", "Text", "RichText"].includes(msgType)) return null;
 
   const sender = (msg.imdisplayname as string) ?? "Unknown";
+  const time = formatTimestamp(msg.originalarrivaltime as string);
+  const id = (msg.id as string) ?? "";
   const content = stripHtml((msg.content as string) ?? "");
-  if (!content) return null;
+  if (!content) {
+    // Media/file/image-only messages carry no text - render a marker row
+    // instead of dropping the message entirely.
+    const media = extractMedia(msg);
+    if (media) {
+      return {
+        time,
+        sender,
+        body: `[${media.kind} ${media.duration} — media id ${id}]`,
+        id,
+      };
+    }
+    const file = extractFile(msg);
+    if (file) {
+      return {
+        time,
+        sender,
+        body: `[file: ${file.fileName} — file id ${id}]`,
+        id,
+      };
+    }
+    const image = extractImage(msg);
+    if (image) {
+      return {
+        time,
+        sender,
+        body: `[${image.kind} ${image.duration} — img id ${id}]`,
+        id,
+      };
+    }
+    return null;
+  }
 
+  const img = extractImage(msg);
   return {
-    time: formatTimestamp(msg.originalarrivaltime as string),
+    time,
     sender,
-    body: content,
-    id: (msg.id as string) ?? "",
+    body: img
+      ? `${content} [${img.kind} ${img.duration} — img id ${id}]`
+      : content,
+    id,
   };
 }
 
