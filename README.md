@@ -65,6 +65,14 @@ teams messages a1b2
 # Send a message
 teams send a1b2 "Hello from the CLI"
 
+# React to the newest message (like by default)
+teams react a1b2
+teams react a1b2 heart
+
+# React to a specific message, or remove your reaction
+teams react a1b2 like --msg 1791700000000
+teams react a1b2 like --msg 1791700000000 --remove
+
 # Find a person by name or email
 teams find "Jane Smith"
 
@@ -144,6 +152,7 @@ npm run dev -- chats
 3. CLI commands use these tokens to call the Teams Chat Service API (`teams.cloud.microsoft/api/chatsvc/`) and the Substrate Search API (`substrate.office.com`) directly via `fetch`
 4. The `teams chats` command caches the conversation list locally so you can reference chats by short ID in subsequent commands
 5. The `teams dm` command searches for a user via the Substrate Suggestions API, creates a 1:1 thread via `POST /threads`, and sends the message — all in one step
+6. `teams react` drives the logged-in browser profile (headless by default) through the Teams web UI: it opens the chat, hovers the message row, and clicks the reaction on the hover quick bar (`like`, `heart`, `laugh`, `surprised`). The chatsvc REST API rejects reaction writes and the native protocol rides a WebSocket inside a SharedWorker, so the web UI is the only scriptable path. Every reaction is verified server-side by re-reading the message's `emotions` property; reacting again with the same emoji is refused (the UI would toggle it off)
 
 ## Project structure
 
