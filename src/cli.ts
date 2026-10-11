@@ -40,6 +40,14 @@ import {
   stripHtml,
   transcriptFilename,
 } from "./formatting.js";
+import {
+  driveReaction,
+  hasMyReaction,
+  isReactionName,
+  pickTargetMessage,
+  REACTIONS,
+  searchSnippet,
+} from "./react.js";
 
 function saveChatIndex(chats: FormattedChat[]): void {
   mkdirSync(DATA_DIR, { recursive: true });
@@ -177,6 +185,108 @@ export function createProgram(): Command {
       console.log(
         chalk.green("Sent.") +
           ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+      );
+    });
+
+  // react
+  program
+    .command("react <chat> [emoji]")
+    .description(
+      "React to a message (default: like on the newest message). " +
+        "Emoji: like, heart, laugh, surprised.",
+    )
+    .option(
+      "-m, --msg <id>",
+      "React to a specific message id (from `messages`) instead of the newest",
+    )
+    .option("-r, --remove", "Toggle the reaction OFF instead of ON")
+    .option("--headed", "Show the browser window (debugging)")
+    .option("-t, --timeout <ms>", "Per-step timeout in milliseconds", "60000")
+    .action(async (chat: string, emoji: string | undefined, opts) => {
+      const name = (emoji ?? "like").toLowerCase();
+      if (!isReactionName(name)) {
+        console.error(
+          `Unknown reaction '${name}'. Use: ${Object.keys(REACTIONS).join(", ")}.`,
+        );
+        process.exit(1);
+      }
+
+      const myMri = getMyMri();
+      if (!myMri) {
+        console.error("Could not determine your user ID. Run `teams login`.");
+        process.exit(1);
+      }
+
+      const convId = resolveConversationId(chat);
+      const client = await getChatClient();
+      const messages = await getMessages(client, convId, 30);
+      const target = pickTargetMessage(messages, opts.msg);
+      if (!target) {
+        console.error(
+          opts.msg
+            ? `Message '${opts.msg}' not found in this conversation.`
+            : "No reactable message found in this conversation.",
+        );
+        process.exit(1);
+      }
+      const messageId = target.id as string;
+      const snippet = searchSnippet(target);
+
+      // The UI chat list shows the counterpart's name ("Chat with X" in the
+      // CLI index becomes "X").
+      const chatName = (
+        loadChatIndex().find((c) => c.id === convId)?.name ?? ""
+      ).replace(/^Chat with /, "");
+      if (!chatName) {
+        console.error("Chat display name unknown. Run `teams chats` first.");
+        process.exit(1);
+      }
+
+      // Clicking a reaction you already set toggles it OFF - refuse no-ops.
+      const already = hasMyReaction(target, name, myMri);
+      if (already && !opts.remove) {
+        console.log(
+          `Already reacted with '${name}' on message ${messageId}. Nothing to do.`,
+        );
+        return;
+      }
+      if (!already && opts.remove) {
+        console.log(
+          `No '${name}' reaction of yours on message ${messageId}. Nothing to do.`,
+        );
+        return;
+      }
+
+      console.log(
+        `${opts.remove ? "Removing" : "Adding"} '${name}' on "${snippet.slice(0, 40)}" (message ${messageId})...`,
+      );
+      await driveReaction({
+        name,
+        snippet,
+        chatName,
+        headed: opts.headed,
+        timeoutMs: Number(opts.timeout),
+      });
+
+      // Verify server-side: the click is UI-driven, so confirm by state.
+      let verified = false;
+      for (let attempt = 0; attempt < 15 && !verified; attempt++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const recheck = await getMessages(client, convId, 30);
+        const msg = recheck.find((m) => m.id === messageId);
+        verified = msg
+          ? hasMyReaction(msg, name, myMri) === !opts.remove
+          : false;
+      }
+      if (!verified) {
+        console.error(
+          "Reaction state could not be verified - re-run with --headed to watch the drive.",
+        );
+        process.exit(1);
+      }
+      console.log(
+        chalk.green(opts.remove ? "Reaction removed." : "Reacted.") +
+          ` ${name} on message ${messageId} (verified).`,
       );
     });
 
