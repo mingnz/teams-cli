@@ -38,6 +38,7 @@ Handles token persistence, automatic refresh, and the Playwright login flow.
 - `saveTokens()` / `loadTokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
 - `getToken()` — check token expiry, attempt silent refresh if expired, and retrieve by name
 - `getSharepointToken(host, recordingUrl)` — returns a cached SharePoint token for `host`, or acquires one via `acquireSharepointToken()` (drives the headless profile to the host root to bootstrap a SharePoint session via SSO, intercepts the `Bearer` token off an `/_api/` request, and caches it with the JWT's `exp`; the recording link is a fallback warmup)
+- `getOneDriveToken({headed})` — the `send-file` token ladder: `TEAMS_SP_TOKEN` env var → cached `tokens.sharepoint[<tenant>-my.sharepoint.com]` → MSAL `accesstoken` entry for a `-my.sharepoint.com` scope in the CLI profile's localStorage (`scanProfileForOneDrive()`, which also discovers the OneDrive host — from any key naming it, else by following the `portal.office.com/onedrive` redirect) → `getSharepointToken(host, …)` interception. `peekOneDriveToken()` is the offline subset (env + cache) used by `--dry-run`
 - `getRegion()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
 - `getMyMri()` — extracts the current user's MRI (`8:orgid:{oid}`) by decoding the `oid` claim from the ic3 JWT token using `Buffer.from(payload, 'base64url')`. Used by the `dm` command to construct thread creation requests.
 - `tryRefresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `true` on success, `false` if the session itself has expired.
@@ -71,7 +72,7 @@ All clients use `AbortSignal.timeout(30000)` for request timeouts. If the requir
 Async functions that make HTTP calls via the `ApiClient` wrapper. Each function takes an `ApiClient` as its first argument, making them easy to test with mocked `fetch` functions. No formatting or display logic lives here.
 
 Key design decisions:
-- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt arithmetic, matching the Teams web client's behaviour
+- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt arithmetic, matching the Teams web client's behaviour. It is `buildMessageBody()` (pure; `{ html: true }` skips the `<p>` wrap and posts the caller's HTML verbatim; optional `amsreferences`/`properties` are only added when given) + `postMessage()` (the POST). `send --dry-run` builds the body and prints it without calling `postMessage()`
 - `getThreadMembers()` uses the `/threads/{id}` endpoint rather than `/conversations/{id}/members` (which returns 404)
 - `searchMessages()` builds the full Substrate Search API request body including correlation IDs and dimension metadata
 - `searchPeople()` uses the Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`) — the same people picker endpoint the Teams web client uses when composing a new chat
@@ -79,6 +80,16 @@ Key design decisions:
 - `pollMessages()` and `pollConversations()` implement delta sync polling. The first call (with no `syncUrl`) sends `startTime=now` to establish a sync anchor and returns no messages. Subsequent calls pass the `syncState` URL from the previous response and get only new items. Returns `{ messages/conversations, syncUrl }`.
 - `getActivity()` is a thin wrapper around `getMessages()` that targets the system conversations (`48:notifications`, `48:mentions`, `48:calllogs`)
 - Transcript download is a three-step SharePoint Stream chain: `resolveDriveItem()` (file URL → `{driveId, itemId}` via the `/_api/v2.0/shares` endpoint), `getTranscriptMetadata()` (drive item → `temporaryDownloadUrl` via `/_api/v2.1/.../?$expand=media/transcripts`), and `downloadTranscriptJson()` (fetch the URL with `?format=json`)
+
+### upload.ts
+
+The `send-file` flow: upload a local file to the sender's OneDrive, share it, and post a message carrying a Teams file object.
+
+- `deriveOneDriveSite(token, fallbackHost?)` — nothing is hardcoded: the token's `aud` claim gives `<tenant>-my.sharepoint.com` (falling back to the host the token was captured on when `aud` isn't a URL), the `upn`/`unique_name` claim gives the personal-site slug (`a.b@tenant.com` → `a_b_tenant_com`)
+- `uploadToChatFiles()` / `getItemSharepointIds()` / `createShareLink()` — plain `fetch` with explicit SharePoint `Bearer` headers (never the chat client, which attaches ic3 auth). Upload uses `conflictBehavior=rename`, and the **server-returned** name is used downstream. The upload is the first drive call, so its error names the derived site URL
+- `buildFileObject()` / `buildFileMessageBody()` — pure; the file object's field set and order are field-proven against the Teams client (golden fixture in `tests/upload.test.ts`). `properties.files` is a JSON **string**. `permissionScope` is `"Anyone"` for anonymous links, `"Organization"` for organization links
+- `sendFile()` — runs the stages `upload → ids → link → message`, reporting a receipt per stage; a failure throws `StageError` carrying the stages that already succeeded so orphaned uploads/links are visible
+- `buildSendFilePlan()` — the offline `--dry-run` plan (ids as `"<post-upload>"`)
 
 ### formatting.ts
 
@@ -119,7 +130,7 @@ The primary API for conversations, messages, and members.
 
 - Base URL: `https://teams.cloud.microsoft/api/chatsvc/{region}/v1/users/ME`
 - Token audience: `ic3.teams.office.com`
-- Used by: `chats`, `messages`, `send`, `dm` (thread creation + send), `watch`, `activity`, `members`
+- Used by: `chats`, `messages`, `send`, `send-file` (final message POST), `dm` (thread creation + send), `watch`, `activity`, `members`
 
 ### Substrate Search API
 
@@ -145,6 +156,7 @@ Where Teams stores meeting recordings and their transcripts. Used to download tr
 - Token audience: the SharePoint host itself; cached per host as `tokens.sharepoint[host]`
 - Used by: `recordings` (lists recordings from the meeting chat — chatsvc only), `transcript` (resolves the recording file and downloads its transcript)
 - Endpoints: `GET /_api/v2.0/shares/u!{base64url(fileUrl)}/driveItem` (resolve file → drive item) and `GET /_api/v2.1/drives/{driveId}/items/{itemId}?$expand=media/transcripts` (drive item → transcript download URL)
+- Also used by `send-file` against the user's own OneDrive (`https://{tenant}-my.sharepoint.com/personal/{slug}`): `PUT /_api/v2.1/drive/root:/Microsoft Teams Chat Files/{name}:/content?@name.conflictBehavior=rename`, `GET /_api/v2.1/drive/items/{id}?select=id,sharepointIds`, `POST /_api/v2.1/drive/items/{id}/microsoft.graph.createLink`
 - Token acquisition: SharePoint tokens are **not** in localStorage (the SPA keeps them in memory). `acquireSharepointToken()` headlessly navigates the persistent profile to the host root (bootstrapping a SharePoint session via SSO, since the Teams login never visits SharePoint), then intercepts the `Bearer` token off the resulting `/_api/` request and caches it. The first transcript download for a host therefore launches a short headless browser session.
 
 ## Testing strategy
@@ -155,6 +167,8 @@ Tests are organized to match the module structure:
 - `auth.test.ts` — tests token persistence, expiry, and JWT parsing using `vi.mock` to redirect file I/O to temp directories (9 tests). Does not test the Playwright login/refresh flows directly.
 - `api.test.ts` — tests API functions using mocked `ApiClient.fetch` (6 tests). The chatsvc base URL is patched to a fixed value.
 - `cli.test.ts` — tests command registration and structure (2 tests).
+- `upload.test.ts` — golden-fixture test of the `send-file` file object, encoding/escaping/site derivation, and the staged flow with a stubbed global `fetch` (rename, per-stage failure reporting).
+- `send-file.test.ts` — the `send-file` command end to end with mocked network: `--dry-run` makes no network call, `TEAMS_SP_TOKEN` precedence, stage-failure output, and the offline part of the token ladder.
 
 The Playwright login flow is not unit-tested since it requires a real browser and user interaction. It's verified manually.
 

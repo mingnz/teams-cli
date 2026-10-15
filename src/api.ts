@@ -61,26 +61,60 @@ export async function getMessages(
   return (data.messages as Record<string, unknown>[]) ?? [];
 }
 
-export async function sendMessage(
+export interface MessageBody {
+  content: string;
+  messagetype: string;
+  contenttype: string;
+  amsreferences?: string[];
+  clientmessageid: string;
+  properties?: Record<string, string>;
+}
+
+// Plain mode wraps the text in a single <p>; html mode posts the caller's
+// HTML verbatim (caller owns structure and escaping). `amsreferences` and
+// `properties` (e.g. file attachments) are only included when given, so the
+// plain/html bodies stay unchanged.
+export function buildMessageBody(
+  content: string,
+  opts: {
+    html?: boolean;
+    amsreferences?: string[];
+    properties?: Record<string, string>;
+  } = {},
+): MessageBody {
+  return {
+    content: opts.html ? content : `<p>${content}</p>`,
+    messagetype: "RichText/Html",
+    contenttype: "text",
+    ...(opts.amsreferences && { amsreferences: opts.amsreferences }),
+    clientmessageid: randomClientMessageId(),
+    ...(opts.properties && { properties: opts.properties }),
+  };
+}
+
+export async function postMessage(
   client: ApiClient,
   conversationId: string,
-  content: string,
+  body: MessageBody,
 ): Promise<Record<string, unknown>> {
-  const clientMsgId = randomClientMessageId();
   const resp = await client.fetch(
     `${client.baseUrl}/conversations/${conversationId}/messages`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: `<p>${content}</p>`,
-        messagetype: "RichText/Html",
-        contenttype: "text",
-        clientmessageid: clientMsgId,
-      }),
+      body: JSON.stringify(body),
     },
   );
   return (await jsonOrThrow(resp)) as Record<string, unknown>;
+}
+
+export async function sendMessage(
+  client: ApiClient,
+  conversationId: string,
+  content: string,
+  opts: { html?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  return postMessage(client, conversationId, buildMessageBody(content, opts));
 }
 
 export async function getThreadMembers(

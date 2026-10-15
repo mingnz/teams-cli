@@ -209,6 +209,7 @@ async function tryRefresh(): Promise<boolean> {
 async function acquireSharepointToken(
   host: string,
   warmupUrl: string,
+  opts: { headed?: boolean } = {},
 ): Promise<boolean> {
   let playwright: typeof import("playwright");
   try {
@@ -222,7 +223,7 @@ async function acquireSharepointToken(
     mkdirSync(BROWSER_PROFILE_DIR, { recursive: true });
     context = await playwright.chromium.launchPersistentContext(
       BROWSER_PROFILE_DIR,
-      { headless: true },
+      { headless: !opts.headed },
     );
     const page = await context.newPage();
 
@@ -299,17 +300,159 @@ function readSharepointEntry(host: string): TokenEntry | null {
 export async function getSharepointToken(
   host: string,
   warmupUrl: string,
+  opts: { headed?: boolean } = {},
 ): Promise<string | null> {
   let entry = readSharepointEntry(host);
   if (entry && !isExpired(entry)) return entry.secret;
 
   // Missing or expired: open the recording to intercept a fresh token, re-read.
-  if (await acquireSharepointToken(host, warmupUrl)) {
+  if (await acquireSharepointToken(host, warmupUrl, opts)) {
     entry = readSharepointEntry(host);
     if (entry && !isExpired(entry)) return entry.secret;
   }
   return null;
 }
+
+// OneDrive (send-file) token ladder:
+//   1. TEAMS_SP_TOKEN env var
+//   2. cached tokens.sharepoint[<tenant>-my host]
+//   3. MSAL localStorage of the CLI's own browser profile
+//   4. intercept a Bearer off an `/_api/` request on the OneDrive host
+//      (getSharepointToken, which also caches it for step 2 next time)
+
+export interface OneDriveToken {
+  token: string;
+  // Host the token was found for; undefined for TEAMS_SP_TOKEN (use `aud`).
+  host?: string;
+  source: "env" | "cache" | "profile" | "intercept";
+}
+
+const ONEDRIVE_HOST = /^[a-z0-9-]+-my\.sharepoint\.com$/;
+
+function cachedOneDriveHosts(): { host: string; entry: TokenEntry }[] {
+  const map = loadTokens()?.sharepoint ?? {};
+  return Object.entries(map)
+    .filter(([host]) => ONEDRIVE_HOST.test(host))
+    .map(([host, entry]) => ({ host, entry }));
+}
+
+/** Env var or cached token only — never opens a browser (used by --dry-run). */
+export function peekOneDriveToken(): OneDriveToken | null {
+  const env = process.env.TEAMS_SP_TOKEN?.trim();
+  if (env) return { token: env, source: "env" };
+  const cached = cachedOneDriveHosts().find(({ entry }) => !isExpired(entry));
+  if (cached) {
+    return { token: cached.entry.secret, host: cached.host, source: "cache" };
+  }
+  return null;
+}
+
+export async function getOneDriveToken(
+  opts: { headed?: boolean } = {},
+): Promise<OneDriveToken | null> {
+  const peeked = peekOneDriveToken();
+  if (peeked) return peeked;
+
+  const scan = await scanProfileForOneDrive(opts);
+  if (scan.token && scan.host) {
+    saveSharepointToken(scan.host, scan.token);
+    return { token: scan.token, host: scan.host, source: "profile" };
+  }
+  // No usable token in localStorage: intercept one on the OneDrive host. The
+  // host comes from the scan (an expired/encrypted entry still names it) or a
+  // stale cache entry.
+  const host = scan.host ?? cachedOneDriveHosts()[0]?.host;
+  if (!host) return null;
+  const secret = await getSharepointToken(
+    host,
+    `https://${host}/_layouts/15/onedrive.aspx`,
+    opts,
+  );
+  return secret ? { token: secret, host, source: "intercept" } : null;
+}
+
+// Load Teams in the CLI's browser profile and look for an MSAL access token
+// scoped to a `<tenant>-my.sharepoint.com` host. Returns the token (when a
+// usable one exists) and the OneDrive host (whenever any key names one). If no
+// key names a host, follow the OneDrive launcher redirect to discover it.
+/* v8 ignore start -- requires live Playwright browser */
+async function scanProfileForOneDrive(opts: {
+  headed?: boolean;
+}): Promise<{ token?: string; host?: string }> {
+  let playwright: typeof import("playwright");
+  try {
+    playwright = await import("playwright");
+  } catch {
+    return {};
+  }
+
+  let context: import("playwright").BrowserContext | undefined;
+  try {
+    mkdirSync(BROWSER_PROFILE_DIR, { recursive: true });
+    context = await playwright.chromium.launchPersistentContext(
+      BROWSER_PROFILE_DIR,
+      { headless: !opts.headed },
+    );
+    const page = await context.newPage();
+    await page.goto(TEAMS_URL);
+    if (!(await waitForToken(page, IC3_AUDIENCE, 30_000, 1000))) return {};
+
+    let host: string | undefined;
+    // OneDrive tokens are acquired lazily after boot; poll for a while.
+    for (let i = 0; i < 15; i++) {
+      const found = await page.evaluate(
+        (now: number) => {
+          let hit: { secret: string; host: string } | null = null;
+          let seen: string | null = null;
+          for (let k = 0; k < localStorage.length; k++) {
+            const key = localStorage.key(k);
+            if (key === null) continue;
+            const lk = key.toLowerCase();
+            const m = lk.match(/([a-z0-9-]+-my\.sharepoint\.com)/);
+            if (!m) continue;
+            seen = seen ?? m[1];
+            if (hit || !lk.includes("accesstoken")) continue;
+            try {
+              const v = JSON.parse(localStorage.getItem(key) ?? "");
+              const secret = v.secret ?? v.accessToken;
+              const exp = Number(v.expiresOn ?? v.expires_on ?? 0);
+              if (typeof secret === "string" && (!exp || exp > now + 60)) {
+                hit = { secret, host: m[1] };
+              }
+            } catch {
+              // encrypted or non-JSON cache entry
+            }
+          }
+          return { hit, seen };
+        },
+        Math.floor(Date.now() / 1000),
+      );
+      if (found.hit) return { token: found.hit.secret, host: found.hit.host };
+      host = host ?? found.seen ?? undefined;
+      await page.waitForTimeout(1000);
+    }
+    if (host) return { host };
+
+    // The OneDrive launcher redirects to the user's personal site.
+    await page
+      .goto("https://portal.office.com/onedrive", {
+        waitUntil: "domcontentloaded",
+      })
+      .catch(() => {});
+    await page
+      .waitForURL((u) => ONEDRIVE_HOST.test(u.host.toLowerCase()), {
+        timeout: 30_000,
+      })
+      .catch(() => {});
+    const landed = new URL(page.url()).host.toLowerCase();
+    return ONEDRIVE_HOST.test(landed) ? { host: landed } : {};
+  } catch {
+    return {};
+  } finally {
+    await context?.close().catch(() => {});
+  }
+}
+/* v8 ignore stop */
 
 export function getMyMri(): string | null {
   const tokens = loadTokens();

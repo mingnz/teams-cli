@@ -1,10 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import Table from "cli-table3";
 import { Command } from "commander";
 import {
+  buildMessageBody,
   createDmThread,
   downloadTranscriptJson,
   getActivity,
@@ -14,12 +21,20 @@ import {
   listConversations,
   pollConversations,
   pollMessages,
+  postMessage,
   resolveDriveItem,
   searchMessages,
   searchPeople,
   sendMessage,
 } from "./api.js";
-import { getMyMri, login, logout } from "./auth.js";
+import {
+  getMyMri,
+  getOneDriveToken,
+  getToken,
+  login,
+  logout,
+  peekOneDriveToken,
+} from "./auth.js";
 import { getChatClient, getSearchClient, getStreamClient } from "./client.js";
 import {
   DATA_DIR,
@@ -40,6 +55,18 @@ import {
   stripHtml,
   transcriptFilename,
 } from "./formatting.js";
+import {
+  buildSendFilePlan,
+  CHAT_FILES_FOLDER,
+  deriveOneDriveSite,
+  MAX_SIMPLE_UPLOAD_BYTES,
+  type OneDriveSite,
+  parseLinkScope,
+  STAGES,
+  StageError,
+  sendFile,
+  uploadFileName,
+} from "./upload.js";
 
 function saveChatIndex(chats: FormattedChat[]): void {
   mkdirSync(DATA_DIR, { recursive: true });
@@ -61,6 +88,50 @@ function resolveConversationId(idOrShort: string): string {
     `Short ID '${idOrShort}' not found. Run \`teams chats\` first.`,
   );
   process.exit(1);
+}
+
+export interface SendOptions {
+  html?: string;
+  htmlFile?: string;
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+// Decide what `send` posts: the positional text (plain) or caller-owned HTML
+// from --html / --html-file. Exactly one source is allowed.
+export async function resolveSendContent(
+  message: string | undefined,
+  opts: SendOptions,
+  io: {
+    readFile: (path: string) => string;
+    readStdin: () => Promise<string>;
+  } = { readFile: (p) => readFileSync(p, "utf-8"), readStdin },
+): Promise<{ content: string; html: boolean } | { error: string }> {
+  const sources = [
+    message !== undefined && "<message>",
+    opts.html !== undefined && "--html",
+    opts.htmlFile !== undefined && "--html-file",
+  ].filter(Boolean);
+  if (sources.length > 1) {
+    return {
+      error: `Use only one of <message>, --html, --html-file (got ${sources.join(", ")}).`,
+    };
+  }
+  if (opts.htmlFile !== undefined) {
+    return { content: io.readFile(opts.htmlFile), html: true };
+  }
+  if (opts.html !== undefined) {
+    const content = opts.html === "-" ? await io.readStdin() : opts.html;
+    return { content, html: true };
+  }
+  if (message === undefined) {
+    return { error: "Nothing to send: give <message>, --html or --html-file." };
+  }
+  return { content: message, html: false };
 }
 
 function printMessages(msgs: FormattedMessage[]): void {
@@ -168,19 +239,183 @@ export function createProgram(): Command {
 
   // send
   program
-    .command("send <chat> <message>")
-    .description("Send a message to a conversation.")
-    .action(async (chat: string, message: string) => {
-      const convId = resolveConversationId(chat);
-      const client = await getChatClient();
-      const result = await sendMessage(client, convId, message);
-      console.log(
-        chalk.green("Sent.") +
-          ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
-      );
-    });
+    .command("send <chat> [message]")
+    .description(
+      "Send a message to a conversation. --html/--html-file post raw HTML " +
+        "as-is (no escaping): for code use <div><pre>…</pre></div> with <>& escaped.",
+    )
+    .option("--html <str>", "Send this HTML verbatim ('-' reads from stdin)")
+    .option("--html-file <path>", "Send the file's contents as HTML verbatim")
+    .option(
+      "--dry-run",
+      "Print the target conversation id and request body; send nothing",
+    )
+    .action(
+      async (
+        chat: string,
+        message: string | undefined,
+        opts: SendOptions & { dryRun?: boolean },
+      ) => {
+        const resolved = await resolveSendContent(message, opts);
+        if ("error" in resolved) {
+          console.error(resolved.error);
+          process.exit(1);
+        }
+        const convId = resolveConversationId(chat);
+        const body = buildMessageBody(resolved.content, {
+          html: resolved.html,
+        });
+        if (opts.dryRun) {
+          console.log(
+            JSON.stringify({ conversationId: convId, body }, null, 2),
+          );
+          return;
+        }
+        const client = await getChatClient();
+        const result = await postMessage(client, convId, body);
+        console.log(
+          chalk.green("Sent.") +
+            ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+        );
+      },
+    );
 
-  // search
+  // send-file
+  program
+    .command("send-file <chat> <file>")
+    .description(
+      "Upload a file to your OneDrive (Microsoft Teams Chat Files), share it " +
+        "and post it to a conversation as a file card.",
+    )
+    .option("--caption <str>", "Text shown above the file (HTML-escaped)")
+    .option(
+      "--link-scope <scope>",
+      "Share link scope: organization (org) or anonymous (anon)",
+      "organization",
+    )
+    .option("--dry-run", "Print the plan and message body; no network at all")
+    .option("--headed", "Show the browser window if a token must be fetched")
+    .action(
+      async (
+        chat: string,
+        file: string,
+        opts: {
+          caption?: string;
+          linkScope: string;
+          dryRun?: boolean;
+          headed?: boolean;
+        },
+      ) => {
+        const scope = parseLinkScope(opts.linkScope);
+        if (!scope) {
+          console.error(
+            `Invalid --link-scope '${opts.linkScope}'. Use organization or anonymous.`,
+          );
+          process.exit(1);
+        }
+        let fileName: string;
+        let size: number;
+        try {
+          fileName = uploadFileName(file);
+          const st = statSync(file);
+          if (!st.isFile()) throw new Error(`Not a file: '${file}'.`);
+          size = st.size;
+        } catch (e) {
+          console.error((e as Error).message);
+          process.exit(1);
+        }
+        if (size > MAX_SIMPLE_UPLOAD_BYTES) {
+          console.error(
+            `File is ${size} bytes; send-file supports up to ${MAX_SIMPLE_UPLOAD_BYTES} bytes.`,
+          );
+          process.exit(1);
+        }
+        const convId = resolveConversationId(chat);
+
+        if (opts.dryRun) {
+          let site: OneDriveSite | null = null;
+          const peeked = peekOneDriveToken();
+          if (peeked) {
+            try {
+              site = deriveOneDriveSite(peeked.token, peeked.host);
+            } catch {
+              site = null;
+            }
+          }
+          const plan = buildSendFilePlan({
+            conversationId: convId,
+            path: file,
+            fileName,
+            size,
+            scope,
+            caption: opts.caption,
+            site,
+          });
+          console.log(JSON.stringify(plan, null, 2));
+          return;
+        }
+
+        // Resolve both tokens before uploading, so a missing chat token can't
+        // leave an orphaned upload behind.
+        const client = await getChatClient();
+        const sp = await getOneDriveToken({ headed: opts.headed });
+        if (!sp) {
+          console.error(
+            "Could not obtain a OneDrive (SharePoint) token. Set TEAMS_SP_TOKEN " +
+              "or re-run `teams login`. Nothing was uploaded.",
+          );
+          process.exit(1);
+        }
+        let site: OneDriveSite;
+        try {
+          site = deriveOneDriveSite(sp.token, sp.host);
+        } catch (e) {
+          console.error(`${(e as Error).message} Nothing was uploaded.`);
+          process.exit(1);
+        }
+
+        console.error(
+          chalk.dim(`OneDrive site ${site.siteUrl} (token: ${sp.source})`),
+        );
+        try {
+          const result = await sendFile({
+            chat: client,
+            conversationId: convId,
+            site,
+            token: sp.token,
+            fileName,
+            data: readFileSync(file),
+            scope,
+            caption: opts.caption,
+            onStage: (r) =>
+              console.error(
+                `[${STAGES.indexOf(r.stage) + 1}/${STAGES.length} ${r.stage}] ${r.receipt}`,
+              ),
+          });
+          console.log(`${chalk.green("Sent.")} Arrival: ${result.arrival}`);
+          console.log(`Share URL: ${result.shareUrl}`);
+        } catch (e) {
+          if (!(e instanceof StageError)) throw e;
+          console.error(
+            chalk.red(`Stage '${e.stage}' FAILED: ${e.message}`) +
+              `\nSucceeded: ${
+                e.completed.map((r) => r.stage).join(", ") || "none"
+              }`,
+          );
+          for (const r of e.completed) {
+            console.error(`  ${r.stage}: ${r.receipt}`);
+          }
+          if (e.completed.length > 0) {
+            console.error(
+              "The file/link above was created but not posted; remove it " +
+                `from OneDrive (${CHAT_FILES_FOLDER}) if unwanted.`,
+            );
+          }
+          process.exit(1);
+        }
+      },
+    );
+
   program
     .command("search <query>")
     .description("Search messages across all conversations.")
