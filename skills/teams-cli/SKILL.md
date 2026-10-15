@@ -49,6 +49,13 @@ teams send <chat_id> "Your message here"
 ```
 Sends a message to an existing conversation. Always confirm with the user before sending.
 
+Plain text collapses to one line in Teams. For multi-line text, lists or code, send HTML instead. It is posted exactly as given, so escape `<>&` inside `<pre>` yourself:
+```bash
+teams send <chat_id> --html '<div><p>line 1<br>line 2</p></div>'
+teams send <chat_id> --html-file msg.html     # or: ... | teams send <chat_id> --html -
+teams send <chat_id> --html-file msg.html --dry-run   # print body, send nothing
+```
+
 ### Search messages
 ```bash
 teams search "quarterly report"       # Search across all chats

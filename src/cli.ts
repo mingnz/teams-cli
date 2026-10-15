@@ -5,6 +5,7 @@ import chalk from "chalk";
 import Table from "cli-table3";
 import { Command } from "commander";
 import {
+  buildMessageBody,
   createDmThread,
   downloadTranscriptJson,
   getActivity,
@@ -14,6 +15,7 @@ import {
   listConversations,
   pollConversations,
   pollMessages,
+  postMessage,
   resolveDriveItem,
   searchMessages,
   searchPeople,
@@ -61,6 +63,50 @@ function resolveConversationId(idOrShort: string): string {
     `Short ID '${idOrShort}' not found. Run \`teams chats\` first.`,
   );
   process.exit(1);
+}
+
+export interface SendOptions {
+  html?: string;
+  htmlFile?: string;
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
+// Decide what `send` posts: the positional text (plain) or caller-owned HTML
+// from --html / --html-file. Exactly one source is allowed.
+export async function resolveSendContent(
+  message: string | undefined,
+  opts: SendOptions,
+  io: {
+    readFile: (path: string) => string;
+    readStdin: () => Promise<string>;
+  } = { readFile: (p) => readFileSync(p, "utf-8"), readStdin },
+): Promise<{ content: string; html: boolean } | { error: string }> {
+  const sources = [
+    message !== undefined && "<message>",
+    opts.html !== undefined && "--html",
+    opts.htmlFile !== undefined && "--html-file",
+  ].filter(Boolean);
+  if (sources.length > 1) {
+    return {
+      error: `Use only one of <message>, --html, --html-file (got ${sources.join(", ")}).`,
+    };
+  }
+  if (opts.htmlFile !== undefined) {
+    return { content: io.readFile(opts.htmlFile), html: true };
+  }
+  if (opts.html !== undefined) {
+    const content = opts.html === "-" ? await io.readStdin() : opts.html;
+    return { content, html: true };
+  }
+  if (message === undefined) {
+    return { error: "Nothing to send: give <message>, --html or --html-file." };
+  }
+  return { content: message, html: false };
 }
 
 function printMessages(msgs: FormattedMessage[]): void {
@@ -168,17 +214,46 @@ export function createProgram(): Command {
 
   // send
   program
-    .command("send <chat> <message>")
-    .description("Send a message to a conversation.")
-    .action(async (chat: string, message: string) => {
-      const convId = resolveConversationId(chat);
-      const client = await getChatClient();
-      const result = await sendMessage(client, convId, message);
-      console.log(
-        chalk.green("Sent.") +
-          ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
-      );
-    });
+    .command("send <chat> [message]")
+    .description(
+      "Send a message to a conversation. --html/--html-file post raw HTML " +
+        "as-is (no escaping): for code use <div><pre>…</pre></div> with <>& escaped.",
+    )
+    .option("--html <str>", "Send this HTML verbatim ('-' reads from stdin)")
+    .option("--html-file <path>", "Send the file's contents as HTML verbatim")
+    .option(
+      "--dry-run",
+      "Print the target conversation id and request body; send nothing",
+    )
+    .action(
+      async (
+        chat: string,
+        message: string | undefined,
+        opts: SendOptions & { dryRun?: boolean },
+      ) => {
+        const resolved = await resolveSendContent(message, opts);
+        if ("error" in resolved) {
+          console.error(resolved.error);
+          process.exit(1);
+        }
+        const convId = resolveConversationId(chat);
+        const body = buildMessageBody(resolved.content, {
+          html: resolved.html,
+        });
+        if (opts.dryRun) {
+          console.log(
+            JSON.stringify({ conversationId: convId, body }, null, 2),
+          );
+          return;
+        }
+        const client = await getChatClient();
+        const result = await postMessage(client, convId, body);
+        console.log(
+          chalk.green("Sent.") +
+            ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+        );
+      },
+    );
 
   // search
   program

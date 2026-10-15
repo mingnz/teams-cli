@@ -65,6 +65,14 @@ teams messages a1b2
 # Send a message
 teams send a1b2 "Hello from the CLI"
 
+# Send raw HTML (multi-line, lists, code) - posted verbatim, you escape <>& yourself
+teams send a1b2 --html '<div><p>line 1<br>line 2</p></div>'
+teams send a1b2 --html-file msg.html
+cat msg.html | teams send a1b2 --html -
+
+# Preview the request body without sending
+teams send a1b2 --html-file msg.html --dry-run
+
 # Find a person by name or email
 teams find "Jane Smith"
 
