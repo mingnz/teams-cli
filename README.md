@@ -119,6 +119,15 @@ teams messages a1b2 --limit 40
 teams search "budget" --limit 10
 ```
 
+`chats` and `messages` accept `--json` to print the raw API objects (including
+`properties`, e.g. file attachments) as a single JSON array on stdout, suitable
+for piping to `jq`:
+
+```sh
+teams chats --json | jq '.[].id'
+teams messages a1b2 --json -n 5 | jq '.[].properties.files // empty | fromjson'
+```
+
 Run `teams --help` or `teams <command> --help` for full details.
 
 ## Development
