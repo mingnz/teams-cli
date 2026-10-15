@@ -61,26 +61,50 @@ export async function getMessages(
   return (data.messages as Record<string, unknown>[]) ?? [];
 }
 
-export async function sendMessage(
+export interface MessageBody {
+  content: string;
+  messagetype: string;
+  contenttype: string;
+  clientmessageid: string;
+}
+
+// Plain mode wraps the text in a single <p>; html mode posts the caller's
+// HTML verbatim (caller owns structure and escaping).
+export function buildMessageBody(
+  content: string,
+  opts: { html?: boolean } = {},
+): MessageBody {
+  return {
+    content: opts.html ? content : `<p>${content}</p>`,
+    messagetype: "RichText/Html",
+    contenttype: "text",
+    clientmessageid: randomClientMessageId(),
+  };
+}
+
+export async function postMessage(
   client: ApiClient,
   conversationId: string,
-  content: string,
+  body: MessageBody,
 ): Promise<Record<string, unknown>> {
-  const clientMsgId = randomClientMessageId();
   const resp = await client.fetch(
     `${client.baseUrl}/conversations/${conversationId}/messages`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: `<p>${content}</p>`,
-        messagetype: "RichText/Html",
-        contenttype: "text",
-        clientmessageid: clientMsgId,
-      }),
+      body: JSON.stringify(body),
     },
   );
   return (await jsonOrThrow(resp)) as Record<string, unknown>;
+}
+
+export async function sendMessage(
+  client: ApiClient,
+  conversationId: string,
+  content: string,
+  opts: { html?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  return postMessage(client, conversationId, buildMessageBody(content, opts));
 }
 
 export async function getThreadMembers(

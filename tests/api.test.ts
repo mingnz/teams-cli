@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildMessageBody,
   createDmThread,
   downloadTranscriptJson,
   getActivity,
@@ -75,6 +76,54 @@ describe("sendMessage", () => {
     const [, init] = fetchFn.mock.calls[0];
     const body = JSON.parse(init.body);
     expect(body.content).toBe('<p>He said "hello" & {test}</p>');
+  });
+
+  it("keeps the plain body shape unchanged", async () => {
+    const client = mockClient({});
+    await sendMessage(client, "19:abc", "line1\nline2");
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe(`${BASE}/conversations/19:abc/messages`);
+    const body = JSON.parse(init.body);
+    expect(Object.keys(body).sort()).toEqual([
+      "clientmessageid",
+      "content",
+      "contenttype",
+      "messagetype",
+    ]);
+    expect(body.content).toBe("<p>line1\nline2</p>");
+    expect(body.messagetype).toBe("RichText/Html");
+    expect(body.contenttype).toBe("text");
+    expect(body.clientmessageid).toMatch(/^\d{19}$/);
+  });
+
+  it("posts html content verbatim in html mode", async () => {
+    const client = mockClient({ OriginalArrivalTime: "789" });
+    const html = "<div><pre>a &lt;b&gt; &amp;\n  c</pre></div>";
+    const result = await sendMessage(client, "19:abc", html, { html: true });
+    expect(result.OriginalArrivalTime).toBe("789");
+    const fetchFn = client.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe(`${BASE}/conversations/19:abc/messages`);
+    const body = JSON.parse(init.body);
+    expect(body.content).toBe(html);
+    expect(body.messagetype).toBe("RichText/Html");
+    expect(body.contenttype).toBe("text");
+    expect(body.clientmessageid).toMatch(/^\d{19}$/);
+  });
+});
+
+describe("buildMessageBody", () => {
+  it("does not wrap or transform html", () => {
+    const html = "<div><p>line1<br>line2</p><ol><li>x</li></ol></div>";
+    expect(buildMessageBody(html, { html: true }).content).toBe(html);
+  });
+
+  it("generates a fresh clientmessageid each call", () => {
+    const a = buildMessageBody("x").clientmessageid;
+    const b = buildMessageBody("x").clientmessageid;
+    expect(a).toMatch(/^\d{19}$/);
+    expect(a).not.toBe(b);
   });
 });
 

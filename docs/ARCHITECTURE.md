@@ -71,7 +71,7 @@ All clients use `AbortSignal.timeout(30000)` for request timeouts. If the requir
 Async functions that make HTTP calls via the `ApiClient` wrapper. Each function takes an `ApiClient` as its first argument, making them easy to test with mocked `fetch` functions. No formatting or display logic lives here.
 
 Key design decisions:
-- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt arithmetic, matching the Teams web client's behaviour
+- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt arithmetic, matching the Teams web client's behaviour. It is `buildMessageBody()` (pure; `{ html: true }` skips the `<p>` wrap and posts the caller's HTML verbatim) + `postMessage()` (the POST). `send --dry-run` builds the body and prints it without calling `postMessage()`
 - `getThreadMembers()` uses the `/threads/{id}` endpoint rather than `/conversations/{id}/members` (which returns 404)
 - `searchMessages()` builds the full Substrate Search API request body including correlation IDs and dimension metadata
 - `searchPeople()` uses the Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`) — the same people picker endpoint the Teams web client uses when composing a new chat

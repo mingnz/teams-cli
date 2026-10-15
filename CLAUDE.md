@@ -36,7 +36,7 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 
 ### Key design details
 
-- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt
+- `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt. Both plain and HTML sends use `messagetype: "RichText/Html"`; `send --html/--html-file` skip the `<p>` wrap and post the caller's HTML untouched (no escaping — caller's job). Body construction (`buildMessageBody`) is split from the POST (`postMessage`) so `--dry-run` can print the exact body
 - `createDmThread()` uses `POST /threads` (without `/users/ME`) with `uniquerosterthread: true` for idempotent 1:1 chat creation
 - `searchPeople()` uses Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`), same endpoint as the Teams web client people picker
 - `getMyMri()` extracts the user's MRI from the ic3 JWT token's `oid` claim — no extra API call needed
