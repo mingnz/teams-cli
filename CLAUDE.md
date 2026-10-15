@@ -37,6 +37,13 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 ### Key design details
 
 - `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt. Both plain and HTML sends use `messagetype: "RichText/Html"`; `send --html/--html-file` skip the `<p>` wrap and post the caller's HTML untouched (no escaping — caller's job). Body construction (`buildMessageBody`) is split from the POST (`postMessage`) so `--dry-run` can print the exact body
+- **`send-file`** (`upload.ts`) = upload to the sender's OneDrive `Microsoft Teams Chat Files/` → `sharepointIds` → `createLink` → chat POST via `postMessage()` with `buildMessageBody(caption, {html, amsreferences: [], properties})`. Gotchas:
+  - The file object in `properties.files` is **field-proven** against the Teams client (field set + order; golden fixture in `tests/upload.test.ts`) — silent changes break the card render. `properties.files` is a JSON **string**
+  - Site is derived from the SP token (`aud` → `<tenant>-my.sharepoint.com`, `upn`/`unique_name` → personal-site slug); never hardcode tenant/user
+  - `conflictBehavior=rename` (never `replace`, which would overwrite a file already shared elsewhere); use the server-returned name downstream
+  - OneDrive calls use plain `fetch` with explicit SP headers — never the chat client (it attaches ic3 auth)
+  - Token ladder (`getOneDriveToken`): `TEAMS_SP_TOKEN` env → cached `tokens.sharepoint[*-my host]` → MSAL localStorage in the CLI profile → `getSharepointToken()` interception. Token is never logged or put in argv
+  - Stages `upload → ids → link → message` each log a receipt to stderr; a failure exits 1 listing which stages succeeded (orphans). Both tokens are resolved before the upload. `--dry-run` makes no network call and opens no browser
 - `createDmThread()` uses `POST /threads` (without `/users/ME`) with `uniquerosterthread: true` for idempotent 1:1 chat creation
 - `searchPeople()` uses Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`), same endpoint as the Teams web client people picker
 - `getMyMri()` extracts the user's MRI from the ic3 JWT token's `oid` claim — no extra API call needed

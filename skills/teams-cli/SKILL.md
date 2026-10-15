@@ -56,6 +56,13 @@ teams send <chat_id> --html-file msg.html     # or: ... | teams send <chat_id> -
 teams send <chat_id> --html-file msg.html --dry-run   # print body, send nothing
 ```
 
+### Send a file
+```bash
+teams send-file <chat_id> ./report.pdf --caption "Q3 numbers"
+teams send-file <chat_id> ./report.pdf --dry-run      # print plan, no network
+```
+Uploads to the user's OneDrive (`Microsoft Teams Chat Files`), creates a share link (`--link-scope organization` by default; `anonymous` = anyone with the link) and posts it as a file card. Always confirm the file and recipient with the user first. If a stage fails, the output lists which stages succeeded — tell the user about any upload/link left behind.
+
 ### Search messages
 ```bash
 teams search "quarterly report"       # Search across all chats

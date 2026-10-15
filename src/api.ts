@@ -65,20 +65,30 @@ export interface MessageBody {
   content: string;
   messagetype: string;
   contenttype: string;
+  amsreferences?: string[];
   clientmessageid: string;
+  properties?: Record<string, string>;
 }
 
 // Plain mode wraps the text in a single <p>; html mode posts the caller's
-// HTML verbatim (caller owns structure and escaping).
+// HTML verbatim (caller owns structure and escaping). `amsreferences` and
+// `properties` (e.g. file attachments) are only included when given, so the
+// plain/html bodies stay unchanged.
 export function buildMessageBody(
   content: string,
-  opts: { html?: boolean } = {},
+  opts: {
+    html?: boolean;
+    amsreferences?: string[];
+    properties?: Record<string, string>;
+  } = {},
 ): MessageBody {
   return {
     content: opts.html ? content : `<p>${content}</p>`,
     messagetype: "RichText/Html",
     contenttype: "text",
+    ...(opts.amsreferences && { amsreferences: opts.amsreferences }),
     clientmessageid: randomClientMessageId(),
+    ...(opts.properties && { properties: opts.properties }),
   };
 }
 

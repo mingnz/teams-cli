@@ -73,6 +73,12 @@ cat msg.html | teams send a1b2 --html -
 # Preview the request body without sending
 teams send a1b2 --html-file msg.html --dry-run
 
+# Send a file (uploaded to your OneDrive "Microsoft Teams Chat Files" folder,
+# shared with your organization by default)
+teams send-file a1b2 ./report.pdf --caption "Q3 numbers"
+teams send-file a1b2 ./report.pdf --link-scope anonymous   # anyone with the link
+teams send-file a1b2 ./report.pdf --dry-run                # print the plan, no network
+
 # Find a person by name or email
 teams find "Jane Smith"
 
