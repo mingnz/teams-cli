@@ -71,6 +71,11 @@ function printMessages(msgs: FormattedMessage[]): void {
   }
 }
 
+// `--json` output: exactly one JSON document on stdout, nothing else.
+function printJson(items: unknown[]): void {
+  process.stdout.write(`${JSON.stringify(items, null, 2)}\n`);
+}
+
 function getVersion(): string {
   try {
     const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -124,11 +129,17 @@ export function createProgram(): Command {
     .command("chats")
     .description("List recent conversations.")
     .option("-n, --limit <number>", "Number of chats to list", "30")
+    .option("--json", "Print raw conversation objects as a JSON array")
     .action(async (opts) => {
       const client = await getChatClient();
       const convos = await listConversations(client, Number(opts.limit));
       const formatted = formatChatList(convos);
       saveChatIndex(formatted);
+
+      if (opts.json) {
+        printJson(convos);
+        return;
+      }
 
       const table = new Table({
         head: ["ID", "Name", "Type", "Last Message", "Time"],
@@ -151,10 +162,15 @@ export function createProgram(): Command {
     .command("messages <chat>")
     .description("Read messages from a conversation.")
     .option("-n, --limit <number>", "Number of messages to fetch", "20")
+    .option("--json", "Print raw message objects as a JSON array")
     .action(async (chat: string, opts) => {
       const convId = resolveConversationId(chat);
       const client = await getChatClient();
       const raw = await getMessages(client, convId, Number(opts.limit));
+      if (opts.json) {
+        printJson(raw);
+        return;
+      }
       const msgs = raw
         .map((r) => formatMessage(r))
         .filter((m): m is FormattedMessage => m !== null);
