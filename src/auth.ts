@@ -43,8 +43,8 @@ export function loadTokens(): TokenStore | null {
 }
 
 function isExpired(entry: TokenEntry): boolean {
-  const expiresOn = entry.expires_on ?? 0;
-  return Date.now() / 1000 > Number(expiresOn);
+  const expiresOn = Number(entry.expires_on);
+  return !Number.isFinite(expiresOn) || expiresOn <= Date.now() / 1000;
 }
 
 // A token store value is a single token (vs. a string like `region` or the
@@ -52,7 +52,13 @@ function isExpired(entry: TokenEntry): boolean {
 function isTokenEntry(
   value: TokenEntry | string | Record<string, TokenEntry> | undefined,
 ): value is TokenEntry {
-  return typeof value === "object" && value !== null && "secret" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "secret" in value &&
+    typeof value.secret === "string" &&
+    value.secret.length > 0
+  );
 }
 
 // The IC3 audience used for detecting login completion
@@ -68,6 +74,8 @@ function findMsalToken(
   aud: string,
 ): { secret: string; expires_on: string } | null {
   const prefix = `https://${aud.toLowerCase()}/`;
+  const now = Date.now() / 1000;
+  let newest: { secret: string; expires_on: string } | null = null;
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key === null) continue;
@@ -75,15 +83,27 @@ function findMsalToken(
     if (parts[3]?.toLowerCase() !== "accesstoken") continue;
     const scopes = (parts[6] ?? "").split(" ");
     if (!scopes.some((s) => s.toLowerCase().startsWith(prefix))) continue;
-    const data = JSON.parse(localStorage.getItem(key)!);
-    return { secret: data.secret, expires_on: data.expiresOn };
+    const stored = localStorage.getItem(key);
+    if (stored === null) continue;
+    const data = JSON.parse(stored);
+    const expiresOn = Number(data.expiresOn);
+    if (
+      typeof data.secret !== "string" ||
+      !data.secret ||
+      !Number.isFinite(expiresOn) ||
+      expiresOn <= now
+    )
+      continue;
+    if (newest === null || expiresOn > Number(newest.expires_on)) {
+      newest = { secret: data.secret, expires_on: String(expiresOn) };
+    }
   }
-  return null;
+  return newest;
 }
 
 /* v8 ignore stop */
 
-// Poll the page until an access token for the given audience appears in localStorage.
+// Poll until an unexpired access token for the requested audience is available.
 /* v8 ignore start -- requires live Playwright page */
 async function waitForToken(
   page: {
@@ -97,19 +117,7 @@ async function waitForToken(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const found = await page.evaluate((aud: string) => {
-        const prefix = `https://${aud.toLowerCase()}/`;
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key === null) continue;
-          const parts = key.split("|");
-          if (parts[3]?.toLowerCase() !== "accesstoken") continue;
-          const scopes = (parts[6] ?? "").split(" ");
-          if (scopes.some((s) => s.toLowerCase().startsWith(prefix)))
-            return true;
-        }
-        return false;
-      }, audience);
+      const found = await page.evaluate(findMsalToken, audience);
       if (found) return true;
     } catch {
       // page may not be ready
@@ -161,39 +169,69 @@ function saveSharepointToken(host: string, secret: string): void {
 }
 
 /* v8 ignore start -- requires live Playwright browser */
-async function tryRefresh(): Promise<boolean> {
+async function tryRefresh(requiredAudience?: string): Promise<boolean> {
   let playwright: typeof import("playwright");
   try {
     playwright = await import("playwright");
   } catch {
+    console.error(
+      "Automatic Teams token refresh requires Playwright. Run `teams login` to reconnect.",
+    );
     return false;
   }
 
+  let context: import("playwright").BrowserContext | undefined;
+  let stage = "browser launch";
   try {
     mkdirSync(BROWSER_PROFILE_DIR, { recursive: true });
-    const context = await playwright.chromium.launchPersistentContext(
+    context = await playwright.chromium.launchPersistentContext(
       BROWSER_PROFILE_DIR,
       { headless: true },
     );
+    stage = "Teams page navigation";
     const page = await context.newPage();
     await page.goto(TEAMS_URL);
 
     if (!(await waitForToken(page, IC3_AUDIENCE, 30_000, 1000))) {
-      await context.close();
+      console.error(
+        "Automatic Teams refresh did not produce an unexpired chat token within 30 seconds. Run `teams login` to complete sign-in.",
+      );
+      return false;
+    }
+    if (
+      requiredAudience &&
+      !(await waitForToken(page, requiredAudience, 30_000, 1000))
+    ) {
+      console.error(
+        "Automatic Teams refresh did not produce the requested resource token within 30 seconds. Run `teams login` to reconnect.",
+      );
       return false;
     }
 
+    stage = "token extraction";
     await page.waitForTimeout(2000);
     const tokens = await extractTokens(
       page,
       TOKEN_AUDIENCES,
       loadTokens() ?? {},
     );
-    await context.close();
+    const chat = tokens.ic3;
+    if (!isTokenEntry(chat) || isExpired(chat)) {
+      console.error(
+        "Automatic Teams refresh did not capture a valid chat token. Run `teams login` to reconnect.",
+      );
+      return false;
+    }
+    stage = "token persistence";
     saveTokens(tokens);
     return true;
   } catch {
+    console.error(
+      `Automatic Teams token refresh failed during ${stage}. Run \`teams login\` to reconnect.`,
+    );
     return false;
+  } finally {
+    await context?.close();
   }
 }
 /* v8 ignore stop */
@@ -270,13 +308,20 @@ async function acquireSharepointToken(
 }
 /* v8 ignore stop */
 
-export async function getToken(name: string): Promise<string | null> {
+export async function getToken(
+  name: string,
+  refreshMissing = false,
+): Promise<string | null> {
   const tokens = loadTokens();
   if (!tokens) return null;
   const entry = tokens[name];
-  if (!isTokenEntry(entry)) return null;
-  if (isExpired(entry)) {
-    if (await tryRefresh()) {
+  if (
+    !isTokenEntry(entry) &&
+    !(refreshMissing && Object.hasOwn(TOKEN_AUDIENCES, name))
+  )
+    return null;
+  if (!isTokenEntry(entry) || isExpired(entry)) {
+    if (await tryRefresh(refreshMissing ? TOKEN_AUDIENCES[name] : undefined)) {
       const refreshedEntry = loadTokens()?.[name];
       if (isTokenEntry(refreshedEntry) && !isExpired(refreshedEntry)) {
         return refreshedEntry.secret;
@@ -355,59 +400,54 @@ export async function login(): Promise<TokenStore> {
       headless: false,
     },
   );
-  const page = await context.newPage();
+  try {
+    const page = await context.newPage();
 
-  console.log("Opening Teams login page...");
-  await page.goto(TEAMS_URL);
-  console.log("Please sign in to Microsoft Teams in the browser window.");
-  console.log('When prompted "Stay signed in?", click Yes.');
-  console.log("Waiting for login to complete (timeout: 5 minutes)...");
+    console.log("Opening Teams login page...");
+    await page.goto(TEAMS_URL);
+    console.log("Please sign in to Microsoft Teams in the browser window.");
+    console.log('When prompted "Stay signed in?", click Yes.');
+    console.log("Waiting for login to complete (timeout: 5 minutes)...");
 
-  if (!(await waitForToken(page, IC3_AUDIENCE, 300_000, 2000))) {
-    await context.close();
-    throw new Error("Login timed out after 5 minutes.");
-  }
-
-  // Wait for MSAL to acquire all tokens (search/presence tokens are lazy)
-  await page.waitForTimeout(8000);
-  console.log("Login detected! Extracting tokens...");
-
-  await extractTokens(page, TOKEN_AUDIENCES, tokens);
-
-  const regionData = await page.evaluate((pattern: string) => {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key !== null && key.indexOf(pattern) !== -1) {
-        const data = JSON.parse(localStorage.getItem(key)!);
-        const gtm =
-          typeof data.item === "string" ? JSON.parse(data.item) : data.item;
-        const ams: string = gtm?.ams ?? "";
-        const match = ams.match(/https:\/\/([a-z]+)-prod/);
-        return match ? match[1] : null;
-      }
+    if (!(await waitForToken(page, IC3_AUDIENCE, 300_000, 2000))) {
+      throw new Error(
+        "Login timed out after 5 minutes without an unexpired chat token. Existing session data was preserved.",
+      );
     }
-    return null;
-  }, REGION_KEY_PATTERN);
-  tokens.region = regionData ?? "amer";
 
-  await context.close();
+    // Wait for MSAL to acquire all tokens (search/presence tokens are lazy)
+    await page.waitForTimeout(8000);
+    console.log("Login detected! Extracting tokens...");
 
-  const validTokens = Object.entries(tokens).filter(
-    ([k, v]) =>
-      k !== "region" &&
-      typeof v === "object" &&
-      v !== null &&
-      "secret" in v &&
-      v.secret,
-  );
-  if (validTokens.length === 0) {
-    logout();
-    throw new Error(
-      'No valid tokens captured. Did you click "Yes" on "Stay signed in?"? Please run `teams login` again and select Yes.',
-    );
+    await extractTokens(page, TOKEN_AUDIENCES, tokens);
+
+    const regionData = await page.evaluate((pattern: string) => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key !== null && key.indexOf(pattern) !== -1) {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          const gtm =
+            typeof data.item === "string" ? JSON.parse(data.item) : data.item;
+          const ams: string = gtm?.ams ?? "";
+          const match = ams.match(/https:\/\/([a-z]+)-prod/);
+          return match ? match[1] : null;
+        }
+      }
+      return null;
+    }, REGION_KEY_PATTERN);
+    tokens.region = regionData ?? "amer";
+
+    const chat = tokens.ic3;
+    if (!isTokenEntry(chat) || isExpired(chat)) {
+      throw new Error(
+        "No unexpired chat token was captured. Existing session data was preserved; please run `teams login` again.",
+      );
+    }
+
+    saveTokens(tokens);
+    return tokens;
+  } finally {
+    await context.close();
   }
-
-  saveTokens(tokens);
-  return tokens;
 }
 /* v8 ignore stop */

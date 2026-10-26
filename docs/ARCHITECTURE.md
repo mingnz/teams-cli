@@ -28,7 +28,7 @@ All constants live here: file paths, token audience strings, API headers, defaul
 
 Key values:
 - `DATA_DIR` — `~/.teams-cli/`, where tokens and caches are stored
-- `TOKEN_AUDIENCES` — maps token names (`ic3`, `search`, `presence`) to the localStorage key patterns used to find them
+- `TOKEN_AUDIENCES` — maps token names (`ic3`, `search`, `presence`, `csa`) to the localStorage key patterns used to find them. CSA targets `chatsvcagg.teams.microsoft.com` for integrations; no public CSA API client or command is exposed.
 - `CLIENT_INFO` — the `clientinfo` header that the chatsvc API requires
 
 ### auth.ts
@@ -36,16 +36,17 @@ Key values:
 Handles token persistence, automatic refresh, and the Playwright login flow.
 
 - `saveTokens()` / `loadTokens()` — JSON round-trip to `~/.teams-cli/tokens.json`
-- `getToken()` — check token expiry, attempt silent refresh if expired, and retrieve by name
+- `getToken()` — check token expiry, attempt silent refresh if expired, and retrieve by name. Optional `refreshMissing=true` also acquires a missing configured audience using a saved sign-in, waiting for the requested resource as well as chat. Defaults and behavior without a saved sign-in are unchanged.
 - `getSharepointToken(host, recordingUrl)` — returns a cached SharePoint token for `host`, or acquires one via `acquireSharepointToken()` (drives the headless profile to the host root to bootstrap a SharePoint session via SSO, intercepts the `Bearer` token off an `/_api/` request, and caches it with the JWT's `exp`; the recording link is a fallback warmup)
 - `getRegion()` — returns the user's region code (e.g. `au`, `amer`) extracted during login
 - `getMyMri()` — extracts the current user's MRI (`8:orgid:{oid}`) by decoding the `oid` claim from the ic3 JWT token using `Buffer.from(payload, 'base64url')`. Used by the `dm` command to construct thread creation requests.
-- `tryRefresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `true` on success, `false` if the session itself has expired.
+- `tryRefresh()` — silently refreshes expired tokens by launching a headless Chromium with the persistent browser profile (`~/.teams-cli/browser-profile/`). MSAL re-acquires tokens using the stored session cookies — no user interaction needed. Returns `true` after capturing an unexpired chat token, otherwise `false` with a safe lifecycle diagnostic.
+- Browser token selection rejects expired/invalid entries and chooses the newest valid audience match. Login/refresh polling waits for that valid token, not merely a cache key. Browser contexts close on all exit paths; failed login retains the existing profile/token file. Refresh failures report a safe lifecycle stage without printing credentials.
 - `login()` — the interactive login flow:
   1. Launches Chromium (headless=false) with a persistent browser profile so session cookies are preserved
   2. Navigates to `teams.cloud.microsoft`
-  3. Polls `localStorage` every 2 seconds for up to 5 minutes until the IC3 token appears
-  4. Extracts all three tokens (ic3, search, presence) and the region from `localStorage`
+  3. Polls `localStorage` every 2 seconds for up to 5 minutes until an unexpired IC3 token is available
+  4. Extracts available unexpired tokens (ic3, search, presence, csa) and the region from `localStorage`
   5. Saves everything to disk
 - `logout()` — removes stored tokens and the browser profile directory
 
@@ -72,6 +73,8 @@ Async functions that make HTTP calls via the `ApiClient` wrapper. Each function 
 
 Key design decisions:
 - `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt arithmetic, matching the Teams web client's behaviour
+- `replyToMessage()` posts to a root-scoped channel conversation: `/conversations/{encodeURIComponent(channelId + ";messageid=" + rootMessageId)}/messages`. The payload includes the channel's `conversationid`, the original post's `replyChainId`, and `formatVariant: "TEAMS"`, matching the observed web reply request. The API response is not itself proof of linkage; verify the retrieved reply's `conversationLink` identifies the requested root. Errors propagate without retrying as a top-level post.
+- `getThreadMessages()` reads the same scoped conversation. Shared validation rejects non-channel/compound IDs and non-positive/non-decimal root IDs before fetching. Channel-wide message retrieval may include replies as well as posts; thread retrieval filters by the requested root and retains normal page-size limits.
 - `getThreadMembers()` uses the `/threads/{id}` endpoint rather than `/conversations/{id}/members` (which returns 404)
 - `searchMessages()` builds the full Substrate Search API request body including correlation IDs and dimension metadata
 - `searchPeople()` uses the Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`) — the same people picker endpoint the Teams web client uses when composing a new chat
@@ -109,6 +112,12 @@ The chat index system works by having `teams chats` cache its formatted output t
 
 The `watch` command uses an async poll loop, creating a fresh `ApiClient` per iteration because tokens may be refreshed between polls.
 
+`reply <channel> <root-message-id> <message>` explicitly targets an existing
+channel post. `messages --ids` adds message IDs without changing default display;
+`messages --thread <root-message-id>` retrieves one channel thread. Neither
+default message display nor `watch` groups replies or exposes parent linkage.
+There is no dedicated thread-watch option or automatic thread-history pagination.
+
 ## API surfaces
 
 The CLI talks to four separate Microsoft APIs, each requiring its own auth token:
@@ -119,7 +128,7 @@ The primary API for conversations, messages, and members.
 
 - Base URL: `https://teams.cloud.microsoft/api/chatsvc/{region}/v1/users/ME`
 - Token audience: `ic3.teams.office.com`
-- Used by: `chats`, `messages`, `send`, `dm` (thread creation + send), `watch`, `activity`, `members`
+- Used by: `chats`, `messages` (including `--thread`), `send`, `reply`, `dm` (thread creation + send), `watch`, `activity`, `members`
 
 ### Substrate Search API
 
@@ -153,8 +162,15 @@ Tests are organized to match the module structure:
 
 - `formatting.test.ts` — unit tests for all pure formatting functions (27 tests). No mocking needed.
 - `auth.test.ts` — tests token persistence, expiry, and JWT parsing using `vi.mock` to redirect file I/O to temp directories (9 tests). Does not test the Playwright login/refresh flows directly.
+- `auth-refresh.test.ts` — mocks Playwright and browser storage to cover stale-cache rejection, newest-valid selection, waiting for renewed tokens, malformed/boundary expiry, browser cleanup, and preservation of saved sessions after unsuccessful login.
 - `api.test.ts` — tests API functions using mocked `ApiClient.fetch` (6 tests). The chatsvc base URL is patched to a fixed value.
 - `cli.test.ts` — tests command registration and structure (2 tests).
+
+Channel reply coverage checks the encoded root-scoped endpoint, explicit payload
+linkage, invalid inputs, HTTP error propagation without top-level fallback,
+thread retrieval, CLI argument routing, and unchanged default send/read behavior.
+Live thread verification must compare the reply's `conversationLink` with the
+original root and retrieve that root's thread; a successful POST alone is insufficient.
 
 The Playwright login flow is not unit-tested since it requires a real browser and user interaction. It's verified manually.
 

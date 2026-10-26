@@ -40,6 +40,8 @@ Returns a table with short IDs (like `a1b2`), chat name, type, last message prev
 ```bash
 teams messages <chat_id>        # Read 20 most recent messages
 teams messages <chat_id> -n 40  # Read 40 messages
+teams messages <channel_id> --ids  # Include message IDs
+teams messages <channel_id> --thread <root_message_id> --ids
 ```
 `<chat_id>` is either a short ID from `teams chats` or a full conversation ID (e.g. `19:abc@thread.v2`). Messages are shown oldest-first.
 
@@ -48,6 +50,18 @@ teams messages <chat_id> -n 40  # Read 40 messages
 teams send <chat_id> "Your message here"
 ```
 Sends a message to an existing conversation. Always confirm with the user before sending.
+
+### Reply to a channel post
+```bash
+teams reply <channel_id> <root_message_id> "Your reply here"
+```
+Use the original channel post's decimal ID from `messages --ids`, not a reply's
+ID. Channel IDs must end in `@thread.tacv2` (cached short IDs are also resolved).
+Confirm the channel, original post, and reply text with the user before sending.
+`send` does not target a post; never use it as a fallback for a failed reply.
+Channel-wide messages may mix posts and replies in a flat list; use
+`messages --thread` to read a particular thread. `watch` remains unchanged and
+has no dedicated thread option.
 
 ### Search messages
 ```bash
@@ -121,7 +135,9 @@ Known limitations to set expectations with the user:
 1. Run `teams chats` to find the conversation
 2. Run `teams messages <short_id>` to read recent context
 3. Draft a reply and confirm with the user before sending
-4. Run `teams send <short_id> "message"`
+4. For chat messages, run `teams send <short_id> "message"`. For a channel post,
+   identify the original root with `messages --ids` and run
+   `teams reply <channel_id> <root_message_id> "message"`.
 
 ### "Message someone I haven't chatted with"
 1. Run `teams find "their name"` to look them up

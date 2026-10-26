@@ -12,6 +12,7 @@ export const TOKEN_AUDIENCES: Record<string, string> = {
   ic3: "ic3.teams.office.com",
   search: "outlook.office.com/search",
   presence: "presence.teams.microsoft.com",
+  csa: "chatsvcagg.teams.microsoft.com",
 };
 
 export const REGION_KEY_PATTERN = "DISCOVER-REGION-GTM";

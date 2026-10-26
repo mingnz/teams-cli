@@ -83,6 +83,60 @@ export async function sendMessage(
   return (await jsonOrThrow(resp)) as Record<string, unknown>;
 }
 
+function channelThreadId(channelId: string, rootMessageId: string): string {
+  if (!/^19:[\w-]+@thread\.tacv2$/.test(channelId)) {
+    throw new Error(
+      "Thread replies require a channel ID ending in @thread.tacv2.",
+    );
+  }
+  if (!/^[1-9]\d*$/.test(rootMessageId)) {
+    throw new Error("Root message ID must be a positive decimal message ID.");
+  }
+  return encodeURIComponent(`${channelId};messageid=${rootMessageId}`);
+}
+
+export async function getThreadMessages(
+  client: ApiClient,
+  channelId: string,
+  rootMessageId: string,
+  pageSize = 20,
+): Promise<Record<string, unknown>[]> {
+  return getMessages(
+    client,
+    channelThreadId(channelId, rootMessageId),
+    pageSize,
+  );
+}
+
+export async function replyToMessage(
+  client: ApiClient,
+  channelId: string,
+  rootMessageId: string,
+  content: string,
+): Promise<Record<string, unknown>> {
+  const threadId = channelThreadId(channelId, rootMessageId);
+  if (!content.trim()) {
+    throw new Error("Reply message must not be empty.");
+  }
+  const resp = await client.fetch(
+    `${client.baseUrl}/conversations/${threadId}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: `<p>${content}</p>`,
+        messagetype: "RichText/Html",
+        contenttype: "Text",
+        clientmessageid: randomClientMessageId(),
+        conversationid: channelId,
+        replyChainId: rootMessageId,
+        properties: { formatVariant: "TEAMS" },
+      }),
+    },
+  );
+  return (await jsonOrThrow(resp)) as Record<string, unknown>;
+}
+
 export async function getThreadMembers(
   client: ApiClient,
   conversationId: string,

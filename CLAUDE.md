@@ -37,6 +37,8 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 ### Key design details
 
 - `sendMessage()` wraps content in `<p>` tags and generates a random 19-digit `clientmessageid` using BigInt
+- Channel replies use `replyToMessage()` and `POST /conversations/{encodeURIComponent(channelId + ";messageid=" + rootMessageId)}/messages`, with `conversationid` set to the channel and `replyChainId` set to the original post ID. This endpoint and linkage were observed in the Teams web client's reply request. Never fall back to a top-level send on failure.
+- `getThreadMessages()` reads that same root-scoped conversation. The CLI exposes `reply <channel> <root-message-id> <message>`, `messages --thread <root-message-id>`, and opt-in `messages --ids`. Reply/thread helpers validate channel IDs (`@thread.tacv2`) and positive decimal root IDs before HTTP requests. Channel-wide results may mix posts and replies; `watch` remains flat and unchanged.
 - `createDmThread()` uses `POST /threads` (without `/users/ME`) with `uniquerosterthread: true` for idempotent 1:1 chat creation
 - `searchPeople()` uses Substrate Suggestions API (`/search/api/v1/suggestions?scenario=peoplepicker.newChat`), same endpoint as the Teams web client people picker
 - `getMyMri()` extracts the user's MRI from the ic3 JWT token's `oid` claim — no extra API call needed
@@ -47,6 +49,8 @@ This is a TypeScript CLI for Microsoft Teams that talks directly to the internal
 - System conversations (ID prefix `48:`) are filtered out of chat listings
 - Login uses a **persistent browser profile** (`~/.teams-cli/browser-profile/`) so session cookies survive for silent token refresh
 - Expired tokens are automatically refreshed via headless Playwright before each command — no user interaction unless the session itself has expired
+- Login/refresh must ignore expired or invalid MSAL cache entries and select the newest unexpired audience match. Token presence alone is not proof of login. Both browser flows close their persistent context on failure; failed login preserves existing session data.
+- Auth also captures the CSA inventory audience (`chatsvcagg.teams.microsoft.com`). `getToken(name, true)` can explicitly refresh a missing configured resource using an existing saved sign-in; the default missing-token behavior is unchanged. Opt-in refresh waits for that resource as well as chat. CSA is not an IC3 token and has no public CLI command/client.
 - Playwright is dynamically imported at runtime (`await import("playwright")`) so it's not required at install time
 - Native `fetch` is used for all HTTP calls (no external HTTP library needed with Node 18+)
 - **Meeting transcripts** (`recordings`/`transcript` commands) use the SharePoint Stream API, not Graph:
