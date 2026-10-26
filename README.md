@@ -51,7 +51,7 @@ Log in by launching a browser session. Sign in as you normally would (including 
 teams login
 ```
 
-Tokens are stored in `~/.teams-cli/tokens.json`. Token lifetimes vary by API (the chat token lasts ~24 hours, the search token ~1.5 hours). Expired tokens are refreshed automatically via a headless browser using your saved session cookies — no manual re-login needed unless the session itself has expired.
+Tokens are stored in `~/.teams-cli/tokens.json`. Token lifetimes vary by API and tenant policy. Expired tokens are refreshed automatically via a headless browser using your saved session cookies — no manual re-login needed unless the session itself has expired. Login and refresh wait for an **unexpired** token and prefer the newest valid audience match; stale browser-cache entries do not count as a successful sign-in. Failed login preserves the existing browser profile and saved tokens.
 
 ## Usage
 
@@ -64,6 +64,11 @@ teams messages a1b2
 
 # Send a message
 teams send a1b2 "Hello from the CLI"
+
+# Show message IDs, then reply under an existing channel post
+teams messages "19:example-channel@thread.tacv2" --ids
+teams reply "19:example-channel@thread.tacv2" 1700000000000 "Reply from the CLI"
+teams messages "19:example-channel@thread.tacv2" --thread 1700000000000 --ids
 
 # Find a person by name or email
 teams find "Jane Smith"
@@ -121,6 +126,22 @@ teams search "budget" --limit 10
 
 Run `teams --help` or `teams <command> --help` for full details.
 
+### Channel threads
+
+`teams reply <channel> <root-message-id> <message>` replies under an existing
+channel post. Use the **original post's** decimal message ID, not a reply's ID.
+`messages --ids` displays IDs; `messages --thread <root-message-id>` retrieves
+that thread (including its root when present in the returned page). Full channel
+IDs ending in `@thread.tacv2`, or cached short IDs resolving to them, are supported.
+Normal `send` behavior is unchanged; it does not attach a channel message to a post.
+
+Channel-wide message retrieval can contain both posts and replies in a flat list.
+The default output and `watch` do not group messages by thread or display parent
+linkage. Use `messages --thread` to read a particular thread. Retrieval remains
+limited to the requested page size; there is no automatic history pagination.
+`watch` is unchanged and has no dedicated `--thread` option or new channel-reply
+delivery guarantee. The reply API is undocumented and may change.
+
 ## Development
 
 ```sh
@@ -140,7 +161,7 @@ npm run dev -- chats
 ## How it works
 
 1. `teams login` opens Chromium via Playwright, navigates to Teams, and waits for you to complete sign-in
-2. Auth tokens are extracted from the browser's `localStorage` (three tokens: chat, search, presence) along with your region
+2. Available auth tokens are extracted from the browser's `localStorage` (chat, search, presence, and CSA inventory) along with your region. CSA is captured for integrations; it does not add a public inventory command. Integrations may explicitly request acquisition of a missing configured token with `getToken(name, true)`, using the existing saved sign-in; normal missing-token behavior is unchanged.
 3. CLI commands use these tokens to call the Teams Chat Service API (`teams.cloud.microsoft/api/chatsvc/`) and the Substrate Search API (`substrate.office.com`) directly via `fetch`
 4. The `teams chats` command caches the conversation list locally so you can reference chats by short ID in subsequent commands
 5. The `teams dm` command searches for a user via the Substrate Suggestions API, creates a 1:1 thread via `POST /threads`, and sends the message — all in one step

@@ -10,10 +10,12 @@ import {
   getActivity,
   getMessages,
   getThreadMembers,
+  getThreadMessages,
   getTranscriptMetadata,
   listConversations,
   pollConversations,
   pollMessages,
+  replyToMessage,
   resolveDriveItem,
   searchMessages,
   searchPeople,
@@ -63,10 +65,10 @@ function resolveConversationId(idOrShort: string): string {
   process.exit(1);
 }
 
-function printMessages(msgs: FormattedMessage[]): void {
+function printMessages(msgs: FormattedMessage[], showIds = false): void {
   for (const m of msgs) {
     console.log(`${chalk.green(m.time)} ${chalk.bold(m.sender)}`);
-    console.log(`  ${m.body}`);
+    console.log(`  ${showIds ? `[${m.id}] ` : ""}${m.body}`);
     console.log();
   }
 }
@@ -151,10 +153,19 @@ export function createProgram(): Command {
     .command("messages <chat>")
     .description("Read messages from a conversation.")
     .option("-n, --limit <number>", "Number of messages to fetch", "20")
+    .option("--ids", "Show message IDs")
+    .option("--thread <root-message-id>", "Read a channel post's reply thread")
     .action(async (chat: string, opts) => {
       const convId = resolveConversationId(chat);
       const client = await getChatClient();
-      const raw = await getMessages(client, convId, Number(opts.limit));
+      const raw = opts.thread
+        ? await getThreadMessages(
+            client,
+            convId,
+            opts.thread,
+            Number(opts.limit),
+          )
+        : await getMessages(client, convId, Number(opts.limit));
       const msgs = raw
         .map((r) => formatMessage(r))
         .filter((m): m is FormattedMessage => m !== null);
@@ -163,7 +174,7 @@ export function createProgram(): Command {
         console.log("No displayable messages.");
         return;
       }
-      printMessages(msgs.reverse());
+      printMessages(msgs.reverse(), opts.ids);
     });
 
   // send
@@ -177,6 +188,27 @@ export function createProgram(): Command {
       console.log(
         chalk.green("Sent.") +
           ` Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
+      );
+    });
+
+  // reply
+  program
+    .command("reply <channel> <root-message-id> <message>")
+    .description(
+      "Reply under an existing channel post (not a new top-level post).",
+    )
+    .action(async (channel: string, rootMessageId: string, message: string) => {
+      const convId = resolveConversationId(channel);
+      const client = await getChatClient();
+      const result = await replyToMessage(
+        client,
+        convId,
+        rootMessageId,
+        message,
+      );
+      console.log(
+        chalk.green("Reply sent.") +
+          ` Root: ${rootMessageId}. Arrival: ${result.OriginalArrivalTime ?? "ok"}`,
       );
     });
 

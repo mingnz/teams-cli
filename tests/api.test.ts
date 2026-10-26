@@ -6,11 +6,13 @@ import {
   getConversation,
   getMessages,
   getThreadMembers,
+  getThreadMessages,
   getTranscriptMetadata,
   listConversations,
   markAsRead,
   pollConversations,
   pollMessages,
+  replyToMessage,
   resolveDriveItem,
   searchMessages,
   searchPeople,
@@ -66,6 +68,9 @@ describe("sendMessage", () => {
     const body = JSON.parse(init.body);
     expect(body.content).toBe("<p>hello</p>");
     expect(body.messagetype).toBe("RichText/Html");
+    expect(_url).toBe(`${BASE}/conversations/19:abc/messages`);
+    expect(body).not.toHaveProperty("replyChainId");
+    expect(body).not.toHaveProperty("conversationid");
   });
 
   it("handles special characters safely", async () => {
@@ -75,6 +80,94 @@ describe("sendMessage", () => {
     const [, init] = fetchFn.mock.calls[0];
     const body = JSON.parse(init.body);
     expect(body.content).toBe('<p>He said "hello" & {test}</p>');
+  });
+});
+
+describe("channel replies", () => {
+  const channel = "19:example-channel@thread.tacv2";
+  const root = "1700000000000";
+  const thread = encodeURIComponent(`${channel};messageid=${root}`);
+
+  it("posts to the root-scoped conversation with explicit thread linkage", async () => {
+    const client = mockClient({ OriginalArrivalTime: "1700000000001" });
+    const result = await replyToMessage(client, channel, root, "Test reply");
+    expect(result.OriginalArrivalTime).toBe("1700000000001");
+    expect(client.fetch).toHaveBeenCalledExactlyOnceWith(
+      `${BASE}/conversations/${thread}/messages`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    const [, init] = vi.mocked(client.fetch).mock.calls[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body).toEqual({
+      content: "<p>Test reply</p>",
+      messagetype: "RichText/Html",
+      contenttype: "Text",
+      clientmessageid: expect.stringMatching(/^\d{19}$/),
+      conversationid: channel,
+      replyChainId: root,
+      properties: { formatVariant: "TEAMS" },
+    });
+  });
+
+  it("reads the same root-scoped conversation and preserves the page size", async () => {
+    const client = mockClient({ messages: [{ id: root }] });
+    expect(await getThreadMessages(client, channel, root, 7)).toEqual([
+      { id: root },
+    ]);
+    const [url] = vi.mocked(client.fetch).mock.calls[0];
+    expect(url).toContain(`/conversations/${thread}/messages?`);
+    expect(new URL(url).searchParams.get("pageSize")).toBe("7");
+  });
+
+  it.each([
+    "",
+    "0",
+    "-1",
+    "1.5",
+    "1e12",
+    "123;messageid=456",
+    "123/456",
+  ])("rejects invalid root ID %j without making a request", async (id) => {
+    const client = mockClient({});
+    await expect(replyToMessage(client, channel, id, "Reply")).rejects.toThrow(
+      "Root message ID",
+    );
+    await expect(getThreadMessages(client, channel, id)).rejects.toThrow(
+      "Root message ID",
+    );
+    expect(client.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "19:example@thread.v2",
+    `${channel};messageid=${root}`,
+    "19:example/path@thread.tacv2",
+    "19:example%2fpath@thread.tacv2",
+  ])("rejects non-channel or compound ID %j", async (id) => {
+    const client = mockClient({});
+    await expect(replyToMessage(client, id, root, "Reply")).rejects.toThrow(
+      "channel ID",
+    );
+    expect(client.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty replies before making a request", async () => {
+    const client = mockClient({});
+    await expect(replyToMessage(client, channel, root, " \n ")).rejects.toThrow(
+      "must not be empty",
+    );
+    expect(client.fetch).not.toHaveBeenCalled();
+  });
+
+  it("surfaces errors without retrying or falling back to a top-level post", async () => {
+    const client = mockClient({});
+    vi.mocked(client.fetch).mockResolvedValue(
+      new Response("Forbidden", { status: 403 }),
+    );
+    await expect(
+      replyToMessage(client, channel, root, "Reply"),
+    ).rejects.toThrow("HTTP 403: Forbidden");
+    expect(client.fetch).toHaveBeenCalledTimes(1);
   });
 });
 
